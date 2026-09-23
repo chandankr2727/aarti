@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>जय माँ अम्बे · माँ दुर्गा की आरती</title>
-  <meta name="description" content="माँ दुर्गा की आरती कीजिए — थाली हाथ में लेकर कैमरे के सामने घुमाइए, और थाली प्रतिमा के सामने घूमेगी।" />
+  <title>Jai Maa Ambe · Durga Aarti</title>
+  <meta name="description" content="Offer aarti to Maa Durga — hold a thali up to the camera and circle it, and the plate will revolve before the pratima." />
   <meta name="theme-color" content="#0B0408" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -78,36 +78,26 @@
     <!-- ══════════ LOADING — a single diya while the pratima arrives ══════════ -->
     <div id="veil" role="status" aria-live="polite">
       <div class="diya" aria-hidden="true"><span class="flame"></span><span class="bowl"></span></div>
-      <p id="veilText">माँ का आगमन हो रहा है…</p>
+      <p id="veilText">The Goddess is arriving…</p>
       <div id="veilBar"><i id="veilFill"></i></div>
     </div>
 
     <!-- ══════════ START ══════════ -->
     <section id="startScreen">
       <div id="startInner">
-        <p class="invocation">॥ श्री दुर्गायै नमः ॥</p>
-        <h1 id="mainTitle">जय माँ अम्बे</h1>
-        <p class="lede">माँ दुर्गा की संध्या आरती में आपका स्वागत है</p>
+        <p class="invocation">॥ Shri Durgayai Namah ॥</p>
+        <h1 id="mainTitle">Jai Maa Ambe</h1>
+        <p class="lede">Welcome to the evening aarti of Maa Durga</p>
 
-        <form id="sankalpForm" autocomplete="off">
-          <label class="field">
-            <span>आपका शुभ नाम</span>
-            <input id="devoteeName" maxlength="40" placeholder="नाम लिखें" />
-          </label>
-          <label class="field">
-            <span>मनोकामना <small>(वैकल्पिक)</small></span>
-            <input id="devoteeWish" maxlength="80" placeholder="मन की बात माँ से कहें" />
-          </label>
-          <button id="beginBtn" class="begin-btn" type="submit" disabled>आरती आरंभ करें</button>
-        </form>
+        <button id="beginBtn" class="begin-btn" type="button" disabled>Begin Aarti</button>
 
         <ol class="steps">
-          <li>थाली या दीपक हाथ में लें</li>
-          <li>कैमरे के सामने धीरे-धीरे गोल घुमाएँ</li>
-          <li>ग्यारह परिक्रमा पर आरती पूर्ण होगी</li>
+          <li>Hold a thali or lamp in your hand</li>
+          <li>Circle it slowly in front of the camera</li>
+          <li>The aarti completes after eleven revolutions</li>
         </ol>
 
-        <p id="statusLine"><span id="idolStatus">प्रतिमा पधार रही हैं…</span><span class="dot">·</span><span id="cameraStatus">कैमरा तैयार हो रहा है…</span></p>
+        <p id="statusLine"><span id="idolStatus">The pratima is arriving…</span><span class="dot">·</span><span id="cameraStatus">Getting the camera ready…</span></p>
       </div>
     </section>
 
@@ -124,21 +114,21 @@
         <g id="ringPips"></g>
       </svg>
       <div class="count">
-        <strong id="parikramaValue">०</strong>
-        <span id="parikramaTotal">/ ११</span>
+        <strong id="parikramaValue">0</strong>
+        <span id="parikramaTotal">/ 11</span>
       </div>
-      <em>परिक्रमा</em>
+      <em>Parikrama</em>
     </div>
 
     <nav id="controls">
-      <button id="bellBtn" class="icon-btn" type="button" title="घंटी बजाएँ (Space)" aria-label="घंटी बजाएँ"><svg><use href="#i-bell" /></svg></button>
-      <button id="flowerBtn" class="icon-btn" type="button" title="पुष्प अर्पित करें" aria-label="पुष्प अर्पित करें"><svg><use href="#i-flower" /></svg></button>
-      <button id="muteBtn" class="icon-btn" type="button" title="ध्वनि (M)" aria-label="ध्वनि चालू/बंद"><svg><use id="muteIcon" href="#i-sound" /></svg></button>
-      <button id="fullscreenBtn" class="icon-btn" type="button" title="पूर्ण स्क्रीन (F)" aria-label="पूर्ण स्क्रीन"><svg><use href="#i-full" /></svg></button>
-      <button id="restartBtn" class="icon-btn" type="button" title="आरंभ पर लौटें" aria-label="आरंभ पर लौटें"><svg><use href="#i-close" /></svg></button>
+      <button id="bellBtn" class="icon-btn" type="button" title="Ring the bell (Space)" aria-label="Ring the bell"><svg><use href="#i-bell" /></svg></button>
+      <button id="flowerBtn" class="icon-btn" type="button" title="Offer flowers" aria-label="Offer flowers"><svg><use href="#i-flower" /></svg></button>
+      <button id="muteBtn" class="icon-btn" type="button" title="Sound (M)" aria-label="Toggle sound"><svg><use id="muteIcon" href="#i-sound" /></svg></button>
+      <button id="fullscreenBtn" class="icon-btn" type="button" title="Fullscreen (F)" aria-label="Fullscreen"><svg><use href="#i-full" /></svg></button>
+      <button id="restartBtn" class="icon-btn" type="button" title="Return to the start" aria-label="Return to the start"><svg><use href="#i-close" /></svg></button>
     </nav>
 
-    <aside id="cameraWidget" class="stowed" aria-label="कैमरा">
+    <aside id="cameraWidget" class="stowed" aria-label="Camera">
       <canvas id="cameraPreviewCanvas" width="320" height="240"></canvas>
       <span id="cameraWidgetDot"></span>
     </aside>
@@ -151,21 +141,21 @@
     <!-- ══════════ BLESSING — after the eleventh parikrama ══════════ -->
     <section id="blessing" class="hidden">
       <div id="blessingInner">
-        <p class="invocation">॥ आरती सम्पन्न ॥</p>
-        <h2 id="blessingTitle">जय माता दी</h2>
+        <p class="invocation">॥ Aarti Complete ॥</p>
+        <h2 id="blessingTitle">Jai Mata Di</h2>
         <p id="blessingName"></p>
         <p id="blessingText"></p>
         <p id="blessingMeta"></p>
         <div class="actions">
-          <button id="saveCardBtn" class="begin-btn" type="button">आशीर्वाद चित्र सहेजें</button>
-          <button id="darshanBtn" class="ghost-btn" type="button">दर्शन करें</button>
-          <button id="againBtn" class="ghost-btn" type="button">फिर से आरती</button>
+          <button id="saveCardBtn" class="begin-btn" type="button">Save Blessing Card</button>
+          <button id="darshanBtn" class="ghost-btn" type="button">Darshan</button>
+          <button id="againBtn" class="ghost-btn" type="button">Aarti Again</button>
         </div>
-        <button id="newBtn" class="link-btn" type="button">नया संकल्प</button>
+        <button id="newBtn" class="link-btn" type="button">Start Over</button>
       </div>
     </section>
 
-    <p id="darshanHint">कहीं भी छुएँ — वापस लौटें</p>
+    <p id="darshanHint">Touch anywhere to return</p>
 
     <!-- ═══════════════════════════════════════════════════════
          FACE SWAP — DISABLED.
@@ -177,38 +167,38 @@
     <div id="faceSwapPanel">
       <input id="selfieInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
       <div id="genderSelectionControls" class="step">
-        <span class="step-label"><i>1</i> अपना स्वरूप चुनें</span>
+        <span class="step-label"><i>1</i> Choose your form</span>
         <div class="choice-row">
-          <button id="selectMaleBtn" class="choice-card" type="button"><img src="assets/devotee-male.png" alt="" /><span>पुरुष</span></button>
-          <button id="selectFemaleBtn" class="choice-card" type="button"><img src="assets/devotee-female.png" alt="" /><span>स्त्री</span></button>
+          <button id="selectMaleBtn" class="choice-card" type="button"><img src="assets/devotee-male.png" alt="" /><span>Male</span></button>
+          <button id="selectFemaleBtn" class="choice-card" type="button"><img src="assets/devotee-female.png" alt="" /><span>Female</span></button>
         </div>
       </div>
       <div id="startSelectionControls" class="step hidden">
-        <span class="step-label"><i>2</i> आरंभ करें</span>
+        <span class="step-label"><i>2</i> Begin</span>
         <div class="choice-row">
-          <button id="startWithFaceSwapBtn" class="begin-btn" type="button">अपना चेहरा लगाएँ</button>
-          <button id="skipFaceSwapBtn" class="ghost-btn" type="button">सीधे आरती करें</button>
+          <button id="startWithFaceSwapBtn" class="begin-btn" type="button">Use My Face</button>
+          <button id="skipFaceSwapBtn" class="ghost-btn" type="button">Do Aarti Directly</button>
         </div>
       </div>
       <div id="faceSwapDetails" class="step hidden">
-        <span class="step-label"><i>3</i> सेल्फ़ी दीजिए</span>
+        <span class="step-label"><i>3</i> Give a selfie</span>
         <div class="choice-row" id="initialSwapButtons">
-          <button id="uploadSelfieBtn" class="ghost-btn" type="button">फ़ोटो चुनें</button>
-          <button id="takePhotoBtn" class="ghost-btn" type="button">फ़ोटो लें</button>
+          <button id="uploadSelfieBtn" class="ghost-btn" type="button">Choose Photo</button>
+          <button id="takePhotoBtn" class="ghost-btn" type="button">Take Photo</button>
         </div>
         <div id="cameraCapturePreview" class="hidden">
           <video id="captureVideo" autoplay playsinline></video>
           <div class="capture-controls">
-            <button id="captureBtn" class="begin-btn" type="button">फ़ोटो लें</button>
-            <button id="closeCaptureBtn" class="ghost-btn" type="button">रद्द करें</button>
+            <button id="captureBtn" class="begin-btn" type="button">Capture</button>
+            <button id="closeCaptureBtn" class="ghost-btn" type="button">Cancel</button>
           </div>
         </div>
         <div id="faceSwapPreview">
           <img id="faceSwapPreviewImage" src="assets/placeholder-face.png" alt="" />
-          <span id="faceSwapStatus">अपनी सेल्फ़ी दीजिए</span>
+          <span id="faceSwapStatus">Give your selfie</span>
         </div>
-        <button id="startGameWithAvatarBtn" class="begin-btn hidden" type="button" onclick="startAarti()">आरती आरंभ करें</button>
-        <button id="backToSelectionBtn" class="link-btn" type="button">वापस</button>
+        <button id="startGameWithAvatarBtn" class="begin-btn hidden" type="button" onclick="startAarti()">Begin Aarti</button>
+        <button id="backToSelectionBtn" class="link-btn" type="button">Back</button>
       </div>
     </div>
     <div id="devoteeLayer" aria-hidden="true">

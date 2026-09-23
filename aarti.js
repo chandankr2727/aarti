@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   माँ दुर्गा की आरती · जय अम्बे गौरी
+   Durga Aarti · Jai Ambe Gauri
 
    The camera finds the aarti thali in the devotee's hand; circling it
    drives the plate around its orbit before the pratima, and each complete
@@ -47,8 +47,6 @@ const STATE = {
   // where an aarti traditionally begins.
   orbitAngle: Math.PI / 2,
   offerings: 0,
-  name: '',
-  wish: '',
 };
 
 // Rising-edge state for the two-palm pushpanjali gesture.
@@ -58,10 +56,6 @@ const tracker = AartiDetect.createAartiTracker();
 
 // Thali position in *mirrored* space — the frame the devotee sees.
 const thali = { x: 0.5, y: 0.5, active: false };
-
-// Devanagari digits: ३ / ११, not 3 / 11.
-const devaFmt = new Intl.NumberFormat('hi-IN-u-nu-deva');
-const deva = (n) => devaFmt.format(n);
 
 // ═══════════════════════════════════════════════════════════════
 // 2.  DOM
@@ -214,7 +208,7 @@ async function initCamera() {
         if (!STATE.cameraReady && webcamEl.videoWidth > 0) {
           STATE.cameraReady = true;
           STATE.usingCamera = true;
-          setCameraStatus('कैमरा तैयार', 'ready');
+          setCameraStatus('Camera ready', 'ready');
           cameraWidgetDot.classList.remove('no-signal');
 
           if (window.RathLogger) {
@@ -249,7 +243,7 @@ async function initCamera() {
 function cameraUnavailable(reason) {
   STATE.cameraReady = false;
   STATE.usingCamera = false;
-  setCameraStatus('कैमरा नहीं मिला — माउस या उँगली से आरती कर सकते हैं', 'warn');
+  setCameraStatus('No camera found — you can do the aarti with mouse or finger', 'warn');
   cameraWidgetDot.classList.add('no-signal');
   if (window.RathLogger) {
     window.RathLogger.log('Aarti Detection', 'Camera unavailable: ' + reason, 'warning');
@@ -337,7 +331,7 @@ function offerFlowers() {
   STATE.offerings++;
   Scene3D.pushpanjali();
   playBell(0.45);
-  showHint('पुष्पांजलि अर्पित', '', 1800);
+  showHint('Flowers offered', '', 1800);
 
   if (window.RathLogger) {
     window.RathLogger.log('Aarti Detection', `Pushpanjali offered (${STATE.offerings}).`, 'info');
@@ -404,7 +398,7 @@ function ringBells() {
 }
 
 function updateHud() {
-  parikramaValue.textContent = deva(STATE.parikrama);
+  parikramaValue.textContent = STATE.parikrama;
 
   const circumference = 2 * Math.PI * 50;
   const shown = Math.min(1, (STATE.parikrama + STATE.progress) / TOTAL_PARIKRAMA);
@@ -437,21 +431,21 @@ function updateHint(res) {
 
   const moving = res && res.moving;
   if (!STATE.usingCamera) {
-    showHint(moving ? '' : 'माउस या उँगली से धीरे-धीरे गोल घुमाएँ');
+    showHint(moving ? '' : 'Circle slowly with your mouse or finger');
   } else if (!STATE.handSeen) {
-    showHint('थाली लेकर कैमरे के सामने आइए', 'warn');
+    showHint('Bring your thali in front of the camera', 'warn');
   } else if (!moving) {
-    showHint(STATE.thaliFound ? 'धीरे-धीरे गोल घुमाना आरंभ करें' : 'थाली या दीपक हाथ में लेकर गोल घुमाएँ');
+    showHint(STATE.thaliFound ? 'Start circling slowly' : 'Hold a thali or lamp and circle it');
   } else if (res.direction < 0) {
-    showHint('घड़ी की दिशा में घुमाएँ', 'warn');
+    showHint('Circle clockwise', 'warn');
   } else {
     showHint('');
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 6.  AARTI — जय अम्बे गौरी
-//     One pad per parikrama; "कंचन थाल विराजत" — the thali itself —
+// 6.  AARTI — Jai Ambe Gauri (kept in Hindi: it's the prayer being sung)
+//     One verse per parikrama; "kanchan thaal virajat" — the thali itself —
 //     falls on the eleventh. The closing pad plays as the aarti completes.
 // ═══════════════════════════════════════════════════════════════
 const VERSES = [
@@ -483,7 +477,7 @@ function setLyrics(html, counter) {
 // `done` parikrama completed so far → the pad for the round now under way.
 function showVerse(done) {
   const i = Math.min(VERSES.length - 1, Math.max(0, done));
-  setLyrics(VERSES[i], `${deva(i + 1)} / ${deva(VERSES.length)}`);
+  setLyrics(VERSES[i], `${i + 1} / ${VERSES.length}`);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -538,21 +532,23 @@ function loop(t) {
 // 9.  COMPLETION — the blessing
 // ═══════════════════════════════════════════════════════════════
 const BLESSINGS = [
-  'सुख, शान्ति और समृद्धि आपके घर में सदा बनी रहे',
-  'आपके सब संकट दूर हों, हर मार्ग मंगलमय हो',
-  'आपकी श्रद्धा और भक्ति दिन-दिन बढ़ती रहे',
-  'माँ की कृपा आप पर और आपके परिवार पर सदा बनी रहे',
-  'आपका जीवन माँ की ज्योति से सदा प्रकाशित रहे',
+  'May happiness, peace and prosperity always fill your home',
+  'May all your troubles be lifted, and every path be blessed',
+  'May your faith and devotion grow with each passing day',
+  'May the Goddess’s grace stay with you and your family always',
+  'May your life always be lit by her radiance',
 ];
 
 function ordinal(n) {
-  return { 1: 'पहली', 2: 'दूसरी', 3: 'तीसरी', 4: 'चौथी', 6: 'छठी' }[n] || `${deva(n)}वीं`;
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 function durationText(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
-  return m ? `${deva(m)} मिनट ${deva(s)} सेकंड` : `${deva(s)} सेकंड`;
+  return m ? `${m}m ${s}s` : `${s}s`;
 }
 
 let finaleTimers = [];
@@ -580,14 +576,10 @@ function completeAarti() {
   finaleTimers.push(setTimeout(() => Scene3D.pushpanjali(2.4), 700));
   finaleTimers.push(setTimeout(() => Scene3D.pushpanjali(2.4), 1400));
 
-  $('blessingName').textContent = STATE.name
-    ? `${STATE.name} जी, माँ अम्बे आपकी हर मनोकामना पूर्ण करें`
-    : 'माँ अम्बे आपकी हर मनोकामना पूर्ण करें';
-  $('blessingText').textContent = STATE.wish
-    ? `“${STATE.wish}” — माँ आपकी यह प्रार्थना स्वीकार करें`
-    : BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)];
+  $('blessingName').textContent = 'May Maa Ambe fulfil every wish of your heart';
+  $('blessingText').textContent = BLESSINGS[Math.floor(Math.random() * BLESSINGS.length)];
   $('blessingMeta').textContent =
-    `${deva(TOTAL_PARIKRAMA)} परिक्रमा · ${durationText(seconds)} · आपकी ${ordinal(count)} आरती`;
+    `${TOTAL_PARIKRAMA} parikrama · ${durationText(seconds)} · your ${ordinal(count)} aarti`;
 
   if (window.RathLogger) {
     window.RathLogger.log('Aarti Detection', `Aarti completed: ${STATE.parikrama} parikrama in ${seconds}s.`, 'info');
@@ -601,7 +593,7 @@ function completeAarti() {
   }, 4200));
 }
 
-// ── आशीर्वाद चित्र — a keepsake card: the lit pandal, her blessing, the date ──
+// ── Blessing card — a keepsake image: the lit pandal, her blessing, the date ──
 function wrapText(ctx, text, x, y, maxW, lineH) {
   const words = text.split(' ');
   let line = '';
@@ -650,15 +642,15 @@ async function saveBlessingCard() {
   ctx.shadowBlur = 16;
 
   ctx.fillStyle = '#E8C96A';
-  ctx.font = '34px "Tiro Devanagari Hindi", serif';
-  ctx.fillText('॥ आरती सम्पन्न ॥', CW / 2, CH - 440);
+  ctx.font = '34px Mukta, sans-serif';
+  ctx.fillText('॥ Aarti Complete ॥', CW / 2, CH - 440);
 
   ctx.fillStyle = '#FFE7B0';
-  ctx.font = '104px "Tiro Devanagari Hindi", serif';
-  ctx.fillText('जय माता दी', CW / 2, CH - 320);
+  ctx.font = '92px "Tiro Devanagari Hindi", serif';
+  ctx.fillText('Jai Mata Di', CW / 2, CH - 320);
 
   ctx.fillStyle = '#F6EDDC';
-  ctx.font = '40px "Tiro Devanagari Hindi", serif';
+  ctx.font = '40px Mukta, sans-serif';
   let y = wrapText(ctx, $('blessingName').textContent, CW / 2, CH - 230, CW - 180, 56);
 
   ctx.fillStyle = '#E8C96A';
@@ -667,16 +659,16 @@ async function saveBlessingCard() {
 
   ctx.fillStyle = '#9A8672';
   ctx.font = '26px Mukta, sans-serif';
-  const date = new Date().toLocaleDateString('hi-IN-u-nu-deva', { day: 'numeric', month: 'long', year: 'numeric' });
+  const date = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
   ctx.fillText(date, CW / 2, Math.max(y + 16, CH - 70));
 
   c.toBlob(async (blob) => {
     if (!blob) return;
-    const file = new File([blob], 'maa-ambe-aashirwad.jpg', { type: 'image/jpeg' });
+    const file = new File([blob], 'jai-maa-ambe-blessing.jpg', { type: 'image/jpeg' });
     // Phones: the share sheet (WhatsApp etc.). Desktop: a download.
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: 'जय माँ अम्बे' });
+        await navigator.share({ files: [file], title: 'Jai Maa Ambe' });
         return;
       } catch (err) {
         if (err.name === 'AbortError') return;
@@ -690,7 +682,7 @@ async function saveBlessingCard() {
   }, 'image/jpeg', 0.92);
 }
 
-// ── दर्शन — every piece of chrome steps aside; touch anywhere to return ──
+// ── Darshan — every piece of chrome steps aside; touch anywhere to return ──
 function enterDarshan() {
   document.body.classList.add('darshan');
   // Deferred so the click that opened darshan does not also close it.
@@ -708,14 +700,8 @@ function startAarti() {
   initAudio();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 
-  STATE.name = $('devoteeName').value.trim();
-  STATE.wish = $('devoteeWish').value.trim();
-  localStorage.setItem('aarti_name', STATE.name);
-
   // Sankalp: a moment of stillness while the camera walks up to her.
-  $('sankalpLine').innerHTML = STATE.name
-    ? `${escapeHtml(STATE.name)} जी की ओर से<br>माँ अम्बे को सादर आरती अर्पित`
-    : 'श्रद्धा भाव से<br>माँ अम्बे को सादर आरती अर्पित';
+  $('sankalpLine').innerHTML = 'With devotion and faith<br>this aarti is offered to Maa Ambe';
   startScreen.classList.add('fade-out');
   $('sankalpMoment').classList.add('show');
   Scene3D.setMode('aarti');
@@ -735,10 +721,6 @@ function startAarti() {
 
     if (window.RathLogger) window.RathLogger.log('Aarti Detection', 'Aarti started.', 'info');
   }, 3400);
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 }
 
 // `running` says whether to carry straight on or drop back to the start screen.
@@ -842,14 +824,15 @@ function ringManualBell() {
     // A few MB of pratima should not load in silence.
     onIdolProgress: (frac) => {
       if (frac >= 0) {
-        veilFill.style.width = `${Math.round(frac * 100)}%`;
-        veilText.textContent = `माँ का आगमन हो रहा है… ${deva(Math.round(frac * 100))}%`;
+        const pct = Math.round(frac * 100);
+        veilFill.style.width = `${pct}%`;
+        veilText.textContent = `The Goddess is arriving… ${pct}%`;
       }
     },
     onIdolReady: (kind) => {
       veilFill.style.width = '100%';
       beginBtn.disabled = false;
-      idolStatus.textContent = kind === 'placeholder' ? 'प्रतिमा अस्थायी रूप में' : 'प्रतिमा विराजमान';
+      idolStatus.textContent = kind === 'placeholder' ? 'Pratima shown as a placeholder' : 'Pratima is seated';
       idolStatus.className = kind === 'placeholder' ? 'warn' : 'ready';
       // Let the first lit frame land before the veil lifts.
       setTimeout(() => document.body.classList.remove('loading'), 400);
@@ -857,16 +840,14 @@ function ringManualBell() {
   });
   onResize();
   buildRingPips();
-  $('parikramaTotal').textContent = `/ ${deva(TOTAL_PARIKRAMA)}`;
-  parikramaValue.textContent = deva(0);
-  $('devoteeName').value = localStorage.getItem('aarti_name') || '';
+  $('parikramaTotal').textContent = `/ ${TOTAL_PARIKRAMA}`;
+  parikramaValue.textContent = '0';
   requestAnimationFrame(loop);
 
   initCamera();
   enablePointerFallback();
 
-  $('sankalpForm').addEventListener('submit', (e) => {
-    e.preventDefault();
+  beginBtn.addEventListener('click', () => {
     if (!beginBtn.disabled) startAarti();
   });
   $('bellBtn').addEventListener('click', ringManualBell);
@@ -880,8 +861,6 @@ function ringManualBell() {
   $('newBtn').addEventListener('click', startNewAarti);
 
   document.addEventListener('keydown', (e) => {
-    // Typing a name must not mute the sound or ring the bell.
-    if (e.target instanceof HTMLInputElement) return;
     if (e.code === 'KeyF') toggleFullscreen();
     if (e.code === 'KeyM') toggleMute();
     if (e.code === 'Space' && STATE.started && !STATE.finished) {
@@ -940,7 +919,7 @@ function ringManualBell() {
   document.getElementById('skipFaceSwapBtn').addEventListener('click', () => startAarti());
   ═══════════════════════════════════════════════════════════ */
 
-  console.log(`%c🔱 जय माँ अम्बे — आरती (quality: ${TIER})`,
+  console.log(`%c🔱 Jai Maa Ambe — Durga Aarti (quality: ${TIER})`,
     'color:#E8C96A;font-size:15px;font-weight:bold;background:#2A0A12;padding:8px 14px;border-radius:6px;');
 })();
 
