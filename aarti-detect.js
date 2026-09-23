@@ -73,6 +73,11 @@ function createAartiTracker(opts = {}) {
     maxStepRad = 1.2,    // >68° in one frame = tracking jump, not motion
     reverseTolerance = 1.0, // backward sweep allowed before the arc resets
     idleMs = 1000,       // no usable motion this long → start a fresh arc
+    // Aarti is offered clockwise. When set, only net clockwise circles
+    // count. Small backward wobbles still register (the plate may rock back
+    // a little, and a wobble cannot be double-counted going forward again);
+    // net backward travel beyond reverseTolerance abandons the arc.
+    clockwiseOnly = false,
   } = opts;
 
   let pts = [];
@@ -102,6 +107,12 @@ function createAartiTracker(opts = {}) {
     lastIntegratedT = keep ? keep.t : -1;
   }
 
+  // Fraction of the current circle done. In clockwise-only mode a sweep
+  // that has wobbled below zero is no progress, not negative progress.
+  function progressOf(s) {
+    return Math.min(1, (clockwiseOnly ? Math.max(0, s) : Math.abs(s)) / (Math.PI * 2));
+  }
+
   function result(t, extra) {
     return Object.assign({
       revolution: false,
@@ -110,7 +121,7 @@ function createAartiTracker(opts = {}) {
       delta: 0,   // radians advanced on this frame
       speed: 0,   // radians per second — delta over the time it actually covered
       sweep,
-      progress: Math.min(1, Math.abs(sweep) / (Math.PI * 2)),
+      progress: progressOf(sweep),
       radius: 0,
       direction,
       moving: false,
@@ -191,8 +202,17 @@ function createAartiTracker(opts = {}) {
         lastMoveAt = pts[i].t;
         direction = Math.sign(delta);
 
-        // Wobble is forgiven; a sustained reversal abandons the arc.
-        if (sweep !== 0 && Math.sign(delta) !== Math.sign(sweep)) {
+        if (clockwiseOnly) {
+          // Net backward travel: forward motion pays it back first, so
+          // rocking back and forth cannot creep either way.
+          backtrack = Math.max(0, backtrack - delta);
+          if (backtrack > reverseTolerance) {
+            resetArc(pts[pts.length - 1]);
+            reset = true;
+            break;
+          }
+        } else if (sweep !== 0 && Math.sign(delta) !== Math.sign(sweep)) {
+          // Wobble is forgiven; a sustained reversal abandons the arc.
           backtrack += Math.abs(delta);
           if (backtrack > reverseTolerance) {
             resetArc(pts[pts.length - 1]);
@@ -224,7 +244,7 @@ function createAartiTracker(opts = {}) {
         delta: frameDelta,
         speed: spanMs > 0 ? frameDelta / (spanMs / 1000) : 0,
         sweep,
-        progress: Math.min(1, Math.abs(sweep) / (Math.PI * 2)),
+        progress: progressOf(sweep),
         radius,
         // +1 is clockwise on screen (y grows downward), which is the
         // traditional direction once the mirrored preview is accounted for.

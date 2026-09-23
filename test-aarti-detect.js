@@ -5,8 +5,8 @@ const assert = require('assert');
 const { createAartiTracker, findThali, fitCircle } = require('./aarti-detect');
 
 // Feed the tracker a synthetic circle and report what it counted.
-function circle({ turns, secondsPerTurn, radius = 0.12, fps = 30, cx = 0.5, cy = 0.5, dir = 1, noise = 0 }) {
-  const tracker = createAartiTracker();
+function circle({ turns, secondsPerTurn, radius = 0.12, fps = 30, cx = 0.5, cy = 0.5, dir = 1, noise = 0, opts = {} }) {
+  const tracker = createAartiTracker(opts);
   const frames = Math.round(turns * secondsPerTurn * fps);
   let fired = 0;
   for (let i = 0; i <= frames; i++) {
@@ -39,6 +39,34 @@ for (const spt of [1.0, 2.0, 3.5, 5.0]) {
 
 // ── counts either direction (anticlockwise is still a full circle) ──
 assert.strictEqual(circle({ turns: 3, secondsPerTurn: 2, dir: -1 }).counted, 3, 'anticlockwise miscounted');
+
+// ── clockwiseOnly: anticlockwise never counts, never moves the plate back ──
+const cw = { clockwiseOnly: true };
+assert.strictEqual(circle({ turns: 3, secondsPerTurn: 2, opts: cw }).counted, 3, 'clockwise miscounted with clockwiseOnly');
+assert.strictEqual(circle({ turns: 3, secondsPerTurn: 2, dir: -1, opts: cw }).counted, 0, 'anticlockwise counted with clockwiseOnly');
+assert.strictEqual(circle({ turns: 3, secondsPerTurn: 2, noise: 0.012, opts: cw }).counted, 3, 'noisy clockwise miscounted with clockwiseOnly');
+// Clockwise with a real hand's wobble (rocking back ~20° as it goes) still
+// counts exactly; the wobble may move the plate back but never double-counts.
+{
+  const tr = createAartiTracker(cw);
+  const fps = 30;
+  // 3.2 turns: the wobble can leave the last moment ~20° short of a circle.
+  for (let i = 0; i <= 3.2 * 2.5 * fps; i++) {
+    const s = i / fps;
+    const a = (s / 2.5) * Math.PI * 2 + Math.sin(s * 9) * 0.35;
+    tr.push(0.5 + Math.cos(a) * 0.12, 0.5 + Math.sin(a) * 0.12, s * 1000);
+  }
+  assert.strictEqual(tr.revolutions, 3, `wobbly clockwise counted ${tr.revolutions}, expected 3`);
+}
+// Rocking back and forth on one arc, going nowhere, must never count.
+{
+  const tr = createAartiTracker(cw);
+  for (let i = 0; i <= 600; i++) {
+    const a = 1 + Math.sin(i * 0.25) * 0.9;
+    tr.push(0.5 + Math.cos(a) * 0.12, 0.5 + Math.sin(a) * 0.12, (i / 30) * 1000);
+  }
+  assert.strictEqual(tr.revolutions, 0, 'rocking in place counted as aarti');
+}
 
 // ── small and large circles both count ──
 assert.strictEqual(circle({ turns: 3, secondsPerTurn: 2, radius: 0.05 }).counted, 3, 'small circle miscounted');

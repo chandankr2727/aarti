@@ -46,13 +46,20 @@ const STATE = {
   // Plate's position on its orbit. Starts at the bottom of the circle,
   // where an aarti traditionally begins.
   orbitAngle: Math.PI / 2,
+  plateMax: Math.PI / 2,  // furthest clockwise the plate has reached
   offerings: 0,
 };
+
+// How far the plate may rock back behind the furthest point it has
+// reached: a hand's natural wobble shows, a full anticlockwise turn can't.
+const PLATE_WOBBLE = 0.5;   // radians, ~29°
 
 // Rising-edge state for the two-palm pushpanjali gesture.
 const gesture = { palmsOpen: false, lastOfferAt: 0 };
 
-const tracker = AartiDetect.createAartiTracker();
+// Aarti is offered clockwise: anticlockwise motion never turns the plate
+// back and never counts (see clockwiseOnly in aarti-detect.js).
+const tracker = AartiDetect.createAartiTracker({ clockwiseOnly: true });
 
 // Thali position in *mirrored* space — the frame the devotee sees.
 const thali = { x: 0.5, y: 0.5, active: false };
@@ -165,10 +172,11 @@ let mpHands = null;
 
 // Hand tracking runs on the main thread, so every inference is a frame the
 // scene cannot draw. It is capped well below the display rate — the circle
-// tracker only needs ~15 samples a second (a fast aarti still moves under
-// 30° between samples; it rejects jumps over 68°).
+// tracker is fine at ~15 samples a second, but MediaPipe's own hand
+// tracking follows the hand from frame to frame and loses it when the hand
+// moves too far between samples — so it runs as often as the tier allows.
 // ponytail: fixed caps per tier; make adaptive if mid-range devices still stutter
-const HANDS_INTERVAL_MS = TIER === 'low' ? 80 : 50;
+const HANDS_INTERVAL_MS = TIER === 'low' ? 66 : 33;
 let lastHandsAt = 0;
 let handsWarm = false;
 
@@ -262,91 +270,89 @@ function cameraUnavailable(reason) {
   }
 }
 
+// The hand being followed, in raw (unmirrored) camera coordinates, and when
+// it was last seen. Detection drops out for a frame or two now and then;
+// a short grace period rides over that instead of breaking the circle.
+let lastPalm = null;
+let lastHandAt = 0;
+const HAND_GRACE_MS = 450;
+
+// Centre of the palm from the four knuckle-and-wrist landmarks — steadier
+// than any single point as the fingers curl around a thali.
+function palmOf(hand) {
+  const pts = [hand[0], hand[5], hand[9], hand[17]];
+  return {
+    x: pts.reduce((s, p) => s + p.x, 0) / 4,
+    y: pts.reduce((s, p) => s + p.y, 0) / 4,
+    scale: Math.max(0.04, Math.hypot(hand[9].x - hand[0].x, hand[9].y - hand[0].y)),
+  };
+}
+
 function onHandsResults(results) {
   // Raw (unmirrored) frame into the analysis buffer, so pixel coordinates
   // line up with the landmark coordinates MediaPipe reports.
   mCtx.drawImage(results.image, 0, 0, 320, 240);
 
+  const now = performance.now();
   const hands = results.multiHandLandmarks;
-  STATE.handSeen = !!(hands && hands.length);
-
-  let plate = null;
   let palm = null;
 
-  if (STATE.handSeen) {
-    // Prefer the higher hand — the one lifting the thali.
-    const hand = hands.slice().sort((a, b) => a[9].y - b[9].y)[0];
-    palm = {
-      x: (hand[0].x + hand[9].x) / 2,
-      y: (hand[0].y + hand[9].y) / 2,
-      scale: Math.max(0.04, Math.hypot(hand[9].x - hand[0].x, hand[9].y - hand[0].y)),
-    };
+  if (hands && hands.length) {
+    const palms = hands.map(palmOf);
+    // Stay with the same hand: the one nearest where we last were. Picking
+    // by height let the choice flip between two hands mid-circle, which the
+    // tracker saw as a jump. With nothing to follow yet, take the higher
+    // hand — the one lifting the thali.
+    palm = lastPalm
+      ? palms.reduce((best, p) => (Math.hypot(p.x - lastPalm.x, p.y - lastPalm.y)
+        < Math.hypot(best.x - lastPalm.x, best.y - lastPalm.y) ? p : best))
+      : palms.reduce((best, p) => (p.y < best.y ? p : best));
+    lastPalm = palm;
+    lastHandAt = now;
+  }
+  STATE.handSeen = now - lastHandAt < HAND_GRACE_MS;
 
-    let pixels = null;
+  // The plate is looked for only to show the devotee it has been seen. The
+  // circle itself always follows the palm: switching between the plate's
+  // centre and the palm's whenever the plate flickered in and out made the
+  // position jump — that broke circles and read as backward motion.
+  let plate = null;
+  if (palm) {
     try {
-      pixels = mCtx.getImageData(0, 0, 320, 240).data;
-    } catch (_) { /* tainted canvas — fall back to the palm */ }
-
-    plate = pixels ? AartiDetect.findThali(pixels, 320, 240, palm) : null;
+      const pixels = mCtx.getImageData(0, 0, 320, 240).data;
+      plate = AartiDetect.findThali(pixels, 320, 240, palm);
+    } catch (_) { /* tainted canvas — no plate feedback */ }
   }
 
-  checkPushpanjali(hands, performance.now());
-  updateThali(plate, palm);
+  checkPushpanjali(hands, now);
+  updateThali(plate, palm, now);
   drawCameraPreview(results.image, plate);
 }
 
-// ── Pushpanjali ──
-// A finger counts as extended when its tip is further from the wrist than
-// its middle joint — robust to hand size, rotation and distance.
-function isOpenPalm(lm) {
-  const wrist = lm[0];
-  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-  let extended = 0;
-  for (const [tip, pip] of [[8, 6], [12, 10], [16, 14], [20, 18]]) {
-    if (d(lm[tip], wrist) > d(lm[pip], wrist) * 1.18) extended++;
-  }
-  return extended >= 3;
+// Hand playing the aarti is lost for good (not just a dropped frame).
+function handGone(now) {
+  return now - lastHandAt >= HAND_GRACE_MS;
 }
 
-function checkPushpanjali(hands, now) {
-  const open = !!(hands && hands.length >= 2 && hands.every(isOpenPalm));
-  // Fire on the rising edge only, so holding your palms up does not pour
-  // flowers continuously.
-  if (open && !gesture.palmsOpen && now - gesture.lastOfferAt > 900) {
-    gesture.lastOfferAt = now;
-    offerFlowers();
-  }
-  gesture.palmsOpen = open;
-}
-
-function offerFlowers() {
-  if (!STATE.started || STATE.finished) return;
-  STATE.offerings++;
-  Scene3D.pushpanjali();
-  playBell(0.45);
-  showHint('Flowers offered', '', 1800);
-
-  if (window.RathLogger) {
-    window.RathLogger.log('Aarti Detection', `Pushpanjali offered (${STATE.offerings}).`, 'info');
-  }
-}
-
-function updateThali(plate, palm) {
+function updateThali(plate, palm, now = performance.now()) {
   STATE.thaliFound = !!(plate && plate.found);
 
-  const source = STATE.thaliFound ? plate : palm;
-  if (!source) {
+  if (!palm) {
+    // A dropped frame or two: hold position and wait, rather than feeding
+    // the tracker nothing and letting the pointer fallback interleave.
+    if (!handGone(now)) return;
     thali.active = false;
+    lastPalm = null;
     updateHint(null);
     return;
   }
 
   thali.active = true;
   // Mirror X: everything downstream works in the frame the devotee sees.
-  thali.x += ((1 - source.x) - thali.x) * 0.45;
-  thali.y += (source.y - thali.y) * 0.45;
+  thali.x += ((1 - palm.x) - thali.x) * 0.5;
+  thali.y += (palm.y - thali.y) * 0.5;
 
-  if (STATE.started && !STATE.finished) feedTracker(thali.x, thali.y, performance.now());
+  if (STATE.started && !STATE.finished) feedTracker(thali.x, thali.y, now);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -358,7 +364,10 @@ function feedTracker(x, y, t) {
   STATE.progress = res.progress;
   // The plate's orbit angle advances by exactly the angle the hand swept,
   // so the plate tracks the devotee's circling one-to-one.
-  if (res.delta) STATE.orbitAngle += res.delta;
+  if (res.delta) {
+    STATE.orbitAngle = Math.max(STATE.orbitAngle + res.delta, STATE.plateMax - PLATE_WOBBLE);
+    STATE.plateMax = Math.max(STATE.plateMax, STATE.orbitAngle);
+  }
 
   for (let i = 0; i < res.completed; i++) onParikramaComplete();
 
@@ -751,6 +760,7 @@ function clearRound(running) {
   STATE.started = running;
   STATE.startTime = Date.now();
   STATE.orbitAngle = Math.PI / 2;
+  STATE.plateMax = Math.PI / 2;
   STATE.offerings = 0;
   showVerse(0);
   updateHud();
