@@ -84,7 +84,6 @@ const ringPips = $('ringPips');
 const lyricsLine = $('lyricsLine');
 const verseCounter = $('verseCounter');
 const blessing = $('blessing');
-const bells = document.querySelectorAll('.temple-bell');
 
 let W = window.innerWidth;
 let H = window.innerHeight;
@@ -389,12 +388,9 @@ function onParikramaComplete() {
   else showVerse(STATE.parikrama);
 }
 
-function ringBells() {
-  bells.forEach((b) => {
-    b.classList.remove('ring');
-    void b.getBoundingClientRect(); // restart the CSS animation
-    b.classList.add('ring');
-  });
+// The brass bells in the temple swing; see Scene3D.ringBells.
+function ringBells(strength = 1) {
+  Scene3D.ringBells(strength);
 }
 
 function updateHud() {
@@ -642,23 +638,37 @@ async function saveBlessingCard() {
   ctx.shadowBlur = 16;
 
   ctx.fillStyle = '#E8C96A';
-  ctx.font = '34px Mukta, sans-serif';
-  ctx.fillText('॥ Aarti Complete ॥', CW / 2, CH - 440);
+  ctx.font = '600 30px "Cormorant Garamond", Georgia, serif';
+  ctx.letterSpacing = '12px';
+  ctx.fillText('AARTI COMPLETE', CW / 2, CH - 470);
+  ctx.letterSpacing = '0px';
 
-  ctx.fillStyle = '#FFE7B0';
-  ctx.font = '92px "Tiro Devanagari Hindi", serif';
-  ctx.fillText('Jai Mata Di', CW / 2, CH - 320);
+  const gold = ctx.createLinearGradient(0, CH - 440, 0, CH - 330);
+  gold.addColorStop(0, '#FFF6D8'); gold.addColorStop(0.45, '#F3D383'); gold.addColorStop(1, '#B8862A');
+  ctx.fillStyle = gold;
+  ctx.font = '600 120px "Cormorant Garamond", Georgia, serif';
+  ctx.fillText('Jai Mata Di', CW / 2, CH - 345);
+
+  // The same lotus divider as on screen
+  ctx.save();
+  ctx.translate(CW / 2 - 180, CH - 318);
+  ctx.scale(1.5, 1.5);
+  ctx.strokeStyle = ctx.fillStyle = '#E8C96A';
+  ctx.lineWidth = 1.2;
+  ctx.stroke(new Path2D('M6 13H92M148 13H234M109 22.5H131'));
+  ctx.fill(new Path2D('M96 10l3 3-3 3-3-3ZM144 10l3 3-3 3-3-3ZM120 2C125 7.5 125 14.5 120 20C115 14.5 115 7.5 120 2ZM120 20C112.5 19 107.5 13.5 105.5 8C112 9 117 13.5 120 20ZM120 20C127.5 19 132.5 13.5 134.5 8C128 9 123 13.5 120 20Z'));
+  ctx.restore();
 
   ctx.fillStyle = '#F6EDDC';
-  ctx.font = '40px Mukta, sans-serif';
-  let y = wrapText(ctx, $('blessingName').textContent, CW / 2, CH - 230, CW - 180, 56);
+  ctx.font = 'italic 500 46px "Cormorant Garamond", Georgia, serif';
+  let y = wrapText(ctx, $('blessingName').textContent, CW / 2, CH - 225, CW - 180, 56);
 
   ctx.fillStyle = '#E8C96A';
-  ctx.font = '32px Mukta, sans-serif';
-  y = wrapText(ctx, $('blessingText').textContent, CW / 2, y + 6, CW - 200, 46);
+  ctx.font = '30px Mukta, sans-serif';
+  y = wrapText(ctx, $('blessingText').textContent, CW / 2, y + 4, CW - 200, 44);
 
-  ctx.fillStyle = '#9A8672';
-  ctx.font = '26px Mukta, sans-serif';
+  ctx.fillStyle = '#A08C76';
+  ctx.font = 'italic 30px "Cormorant Garamond", Georgia, serif';
   const date = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
   ctx.fillText(date, CW / 2, Math.max(y + 16, CH - 70));
 
@@ -695,23 +705,34 @@ function enterDarshan() {
 // 10.  START / RESET
 // ═══════════════════════════════════════════════════════════════
 let startToken = 0;
+let introTimers = [];
 
+function later(ms, fn) {
+  introTimers.push(setTimeout(fn, ms));
+}
+
+// The entrance: ring the bell, the temple doors swing inward, and the
+// camera walks through them into the sanctum. Then the aarti begins.
 function startAarti() {
   initAudio();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 
-  // Sankalp: a moment of stillness while the camera walks up to her.
-  $('sankalpLine').innerHTML = 'With devotion and faith<br>this aarti is offered to Maa Ambe';
-  startScreen.classList.add('fade-out');
-  $('sankalpMoment').classList.add('show');
-  Scene3D.setMode('aarti');
-  playBell(0.6);
-
+  introTimers.forEach(clearTimeout);
+  introTimers = [];
   const token = ++startToken;
-  setTimeout(() => {
-    if (token !== startToken) return;       // restarted during the pause
+
+  startScreen.classList.add('fade-out');
+  playBell(0.9);
+  ringBells(1.2);
+  Scene3D.openDoors();
+
+  later(900, () => $('sankalpMoment').classList.add('show'));
+  // Walk in once the doors are well on their way open.
+  later(1300, () => { Scene3D.setMode('aarti'); Scene3D.pulse(); });
+  later(4700, () => $('sankalpMoment').classList.remove('show'));
+  later(5300, () => {
+    if (token !== startToken) return;       // turned back during the walk-in
     startScreen.style.display = 'none';
-    $('sankalpMoment').classList.remove('show');
 
     clearRound(true);
     document.body.classList.add('playing');
@@ -720,7 +741,7 @@ function startAarti() {
     updateHint(null);
 
     if (window.RathLogger) window.RathLogger.log('Aarti Detection', 'Aarti started.', 'info');
-  }, 3400);
+  });
 }
 
 // `running` says whether to carry straight on or drop back to the start screen.
@@ -748,8 +769,11 @@ function resetAarti() {
   playBell(0.6);
 }
 
+// Back out through the doorway, and the doors close behind you.
 function startNewAarti() {
   startToken++;
+  introTimers.forEach(clearTimeout);
+  introTimers = [];
   clearRound(false);
   showHint('');
   document.body.classList.remove('playing');
@@ -758,6 +782,9 @@ function startNewAarti() {
   startScreen.classList.remove('fade-out');
   cameraWidget.classList.add('stowed');
   Scene3D.setMode('start');
+  // Only once the camera is back outside, or the leaves would swing
+  // through it.
+  later(1200, () => Scene3D.closeDoors());
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -785,14 +812,14 @@ function enablePointerFallback() {
 // ═══════════════════════════════════════════════════════════════
 // 12.  INIT
 // ═══════════════════════════════════════════════════════════════
+// Eleven small flames around the ring, one lit per parikrama.
 function buildRingPips() {
   const ns = 'http://www.w3.org/2000/svg';
   for (let i = 0; i < TOTAL_PARIKRAMA; i++) {
     const a = (i / TOTAL_PARIKRAMA) * Math.PI * 2 - Math.PI / 2;
-    const pip = document.createElementNS(ns, 'circle');
-    pip.setAttribute('cx', 60 + Math.cos(a) * 50);
-    pip.setAttribute('cy', 60 + Math.sin(a) * 50);
-    pip.setAttribute('r', 3);
+    const pip = document.createElementNS(ns, 'path');
+    pip.setAttribute('d', 'M0 -5.5C2.6 -2 2.6 1.8 0 3C-2.6 1.8 -2.6 -2 0 -5.5Z');
+    pip.setAttribute('transform', `translate(${60 + Math.cos(a) * 50} ${60 + Math.sin(a) * 50})`);
     pip.setAttribute('class', 'pip');
     ringPips.appendChild(pip);
   }
@@ -840,7 +867,7 @@ function ringManualBell() {
   });
   onResize();
   buildRingPips();
-  $('parikramaTotal').textContent = `/ ${TOTAL_PARIKRAMA}`;
+  $('parikramaTotal').textContent = `of ${TOTAL_PARIKRAMA}`;
   parikramaValue.textContent = '0';
   requestAnimationFrame(loop);
 

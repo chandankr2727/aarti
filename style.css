@@ -1,29 +1,34 @@
 /* ═══════════════════════════════════════════════════════
    Durga Aarti — interface layer
 
-   The pandal is rendered in WebGL (scene3d.js). Everything here sits over
-   it and is meant to disappear: type set like a film title, a few brass
-   hairlines, no cards, no scores.
+   The temple — its doors, lamps, bells and sanctum — is rendered in WebGL
+   (scene3d.js). What sits over it here is kept to the language of the
+   place: Garamond set like an old temple plaque, brass hairlines, a lotus
+   divider, and buttons that are plates of brass rather than app pills.
 
    Performance: nothing here uses backdrop-filter. A blurred panel over a
    canvas that repaints every frame re-blurs every frame, and on low-end
-   phones that alone cost more than the 3D scene.
+   phones that alone cost more than the 3D scene. The only looping
+   animations (diya flicker, button shine) are transform/opacity only.
 ═══════════════════════════════════════════════════════ */
 
 :root {
   --brass:      #C9A227;
   --brass-lt:   #E8C96A;
-  --gold-glow:  rgba(255, 190, 90, 0.45);
+  --brass-dk:   #7A5A12;
+  --cream:      #FFF1D2;
+  --gold-glow:  rgba(255, 180, 80, 0.3);
   --sindoor:    #C8302A;
   --ivory:      #F6EDDC;
-  --ivory-dim:  #CDBBA2;
-  --ivory-faint:#9A8672;
+  --ivory-dim:  #D6C4AA;
+  --ivory-faint:#A08C76;
   --leaf:       #8FCB9B;
-  --hair:       rgba(232, 201, 106, 0.28);
-  --shade:      0 2px 18px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
+  --hair:       rgba(232, 201, 106, 0.32);
+  --shade:      0 2px 16px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
 
-  --font-display: 'Tiro Devanagari Hindi', 'Mukta', serif;
+  --font-display: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
   --font-body:    'Mukta', system-ui, sans-serif;
+  --font-lyrics:  'Tiro Devanagari Hindi', 'Nirmala UI', serif;
   /* Kept for the disabled face-swap chrome below. */
   --font-hindi:   var(--font-body);
   --font-ui:      var(--font-body);
@@ -59,66 +64,60 @@ html, body {
   z-index: 1;
 }
 
-/* Static darkening at the edges, like a lamp-lit room. Painted once, so it
-   costs nothing per frame. */
+/* Static darkening at the edges, like a lamp-lit room. Painted once. */
 #vignette {
   position: absolute; inset: 0; z-index: 2; pointer-events: none;
-  background:
-    radial-gradient(ellipse 75% 70% at 50% 45%, transparent 45%, rgba(8, 3, 5, 0.75) 100%),
-    linear-gradient(180deg, rgba(8, 3, 5, 0.35), transparent 22%, transparent 70%, rgba(8, 3, 5, 0.7));
+  background: radial-gradient(ellipse 80% 75% at 50% 48%, transparent 50%, rgba(6, 2, 4, 0.7) 100%);
   transition: opacity 1.2s var(--ease);
 }
 
 .hidden { display: none !important; }
 
-/* ═══════════════════════════════════════════
-   BELLS
-═══════════════════════════════════════════ */
-.temple-bell {
-  position: absolute; top: 0;
-  width: 44px; height: 66px;
-  z-index: 6; pointer-events: none;
-  transform-origin: 50% 0%;
-  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.6));
-  opacity: 0; transition: opacity 1s var(--ease);
+/* Shared type */
+.invocation {
+  font-family: var(--font-display); font-weight: 600;
+  font-size: 13px; letter-spacing: 0.42em; text-transform: uppercase;
+  color: var(--brass-lt);
+  text-shadow: var(--shade);
 }
-.temple-bell.left  { left: 11%; }
-.temple-bell.right { right: 11%; }
-body.playing .temple-bell, body.finished .temple-bell { opacity: 0.9; }
-.temple-bell.ring { animation: bellSwing 1.6s var(--ease); }
-@keyframes bellSwing {
-  0%   { transform: rotate(0deg); }
-  14%  { transform: rotate(18deg); }
-  36%  { transform: rotate(-13deg); }
-  58%  { transform: rotate(8deg); }
-  80%  { transform: rotate(-3deg); }
-  100% { transform: rotate(0deg); }
+.gold-text, #mainTitle, #blessingTitle {
+  font-family: var(--font-display); font-weight: 600;
+  line-height: 1.02; letter-spacing: 0.01em;
+  background: linear-gradient(180deg, #FFF6D8 0%, #F3D383 42%, #C8952E 78%, #8E6414 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  /* Static filter on static text: painted once, not per frame. */
+  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 26px rgba(255, 170, 70, 0.22));
 }
+.ornament { display: block; width: 210px; height: 21px; margin: 12px auto; overflow: visible; }
+.orn-line { fill: none; stroke: var(--brass-lt); stroke-width: 1.2; stroke-linecap: round; }
+.orn-fill { fill: var(--brass-lt); }
+.orn-fill.soft { opacity: 0.7; }
 
 /* ═══════════════════════════════════════════
    LOADING VEIL
 ═══════════════════════════════════════════ */
 #veil {
   position: absolute; inset: 0; z-index: 60;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-  background: #080305;
-  transition: opacity 1.6s var(--ease), visibility 1.6s;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+  background: radial-gradient(ellipse at 50% 45%, #1A0A08 0%, #070203 70%);
+  transition: opacity 1.8s var(--ease), visibility 1.8s;
 }
 body:not(.loading) #veil { opacity: 0; visibility: hidden; pointer-events: none; }
 
-.diya { position: relative; width: 64px; height: 70px; }
+.diya { position: relative; width: 70px; height: 76px; }
 .diya .bowl {
-  position: absolute; bottom: 0; left: 0; right: 0; height: 22px;
-  border-radius: 0 0 40px 40px / 0 0 26px 26px;
-  background: linear-gradient(180deg, #B2622A, #6A2E12);
-  box-shadow: inset 0 3px 0 rgba(255, 200, 140, 0.35);
+  position: absolute; bottom: 0; left: 0; right: 0; height: 24px;
+  border-radius: 0 0 44px 44px / 0 0 28px 28px;
+  background: linear-gradient(180deg, #B8662C, #5E2A10);
+  box-shadow: inset 0 3px 0 rgba(255, 200, 140, 0.35), 0 10px 30px rgba(255, 120, 30, 0.15);
 }
 .diya .flame {
-  position: absolute; left: 50%; bottom: 18px;
-  width: 16px; height: 34px; margin-left: -8px;
+  position: absolute; left: 50%; bottom: 20px;
+  width: 17px; height: 38px; margin-left: -8.5px;
   border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
-  background: radial-gradient(ellipse at 50% 72%, #FFF6D8 0 22%, #FFC24A 45%, #FF7A1A 75%, transparent 78%);
-  box-shadow: 0 0 34px 12px rgba(255, 150, 50, 0.35);
+  background: radial-gradient(ellipse at 50% 72%, #FFF8E0 0 22%, #FFC24A 45%, #FF7A1A 75%, transparent 78%);
+  box-shadow: 0 0 40px 14px rgba(255, 150, 50, 0.35);
   transform-origin: 50% 90%;
   animation: flicker 1.8s ease-in-out infinite;
 }
@@ -127,113 +126,135 @@ body:not(.loading) #veil { opacity: 0; visibility: hidden; pointer-events: none;
   30%      { transform: scale(0.94, 1.08) rotate(1.5deg); }
   60%      { transform: scale(1.04, 0.95) rotate(-0.5deg); }
 }
-#veilText { font-family: var(--font-display); font-size: 18px; color: var(--ivory-dim); letter-spacing: 0.02em; }
-#veilBar { width: 160px; height: 1px; background: rgba(232, 201, 106, 0.15); overflow: hidden; }
+#veilText { font-family: var(--font-display); font-style: italic; font-size: 22px; color: var(--ivory-dim); }
+#veilBar { width: 180px; height: 1px; background: rgba(232, 201, 106, 0.15); overflow: hidden; }
 #veilFill { display: block; height: 100%; width: 0%; background: var(--brass-lt); transition: width 0.4s linear; }
 
 /* ═══════════════════════════════════════════
-   START
+   START — words above and below the doors, the doors themselves clear
 ═══════════════════════════════════════════ */
 #startScreen {
   position: absolute; inset: 0; z-index: 40;
-  display: flex; align-items: flex-end; justify-content: center;
-  padding: 24px 24px max(5vh, 24px);
-  overflow-y: auto;
-  /* Only the lower half darkens, so she stays fully visible above the words. */
-  background: linear-gradient(180deg, transparent 30%, rgba(8, 3, 5, 0.55) 55%, rgba(8, 3, 5, 0.92) 100%);
-  transition: opacity 1.2s var(--ease);
+  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  padding: max(5vh, 22px) 24px max(4vh, 20px);
+  text-align: center;
+  background: linear-gradient(180deg,
+    rgba(6, 2, 4, 0.85) 0%, rgba(6, 2, 4, 0.35) 24%, transparent 36%,
+    transparent 58%, rgba(6, 2, 4, 0.6) 76%, rgba(6, 2, 4, 0.94) 100%);
+  transition: opacity 1.1s var(--ease);
 }
 #startScreen.fade-out { opacity: 0; pointer-events: none; }
 
-#startInner { width: min(520px, 100%); text-align: center; }
-body:not(.loading) #startInner > * { animation: rise 1.4s var(--ease) both; }
-body:not(.loading) #startInner > :nth-child(2) { animation-delay: 0.15s; }
-body:not(.loading) #startInner > :nth-child(3) { animation-delay: 0.3s; }
-body:not(.loading) #startInner > :nth-child(4) { animation-delay: 0.45s; }
-body:not(.loading) #startInner > :nth-child(n+5) { animation-delay: 0.6s; }
+body:not(.loading) .start-top > *,
+body:not(.loading) .start-bottom > * { animation: rise 1.6s var(--ease) both; }
+body:not(.loading) .start-top > :nth-child(2) { animation-delay: 0.2s; }
+body:not(.loading) .start-top > :nth-child(3) { animation-delay: 0.45s; }
+body:not(.loading) .start-top > :nth-child(4) { animation-delay: 0.6s; }
+body:not(.loading) .start-bottom > * { animation-delay: 0.9s; }
+body:not(.loading) .start-bottom > :nth-child(n+2) { animation-delay: 1.1s; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 
-.invocation {
-  font-family: var(--font-display);
-  font-size: 14px; letter-spacing: 0.18em;
-  color: var(--brass-lt);
-  text-shadow: var(--shade);
+#mainTitle { margin-top: 10px; font-size: clamp(52px, 8.5vw, 104px); }
+.lede {
+  font-family: var(--font-display); font-style: italic; font-weight: 500;
+  font-size: clamp(18px, 2vw, 22px); color: var(--ivory-dim); text-shadow: var(--shade);
 }
-#mainTitle {
-  margin: 4px 0 2px;
-  font-family: var(--font-display); font-weight: 400;
-  font-size: clamp(44px, 9vw, 76px); line-height: 1.25;
-  color: #FFE7B0;
-  text-shadow: 0 0 30px var(--gold-glow), var(--shade);
-}
-.lede { font-size: 16px; font-weight: 300; color: var(--ivory-dim); text-shadow: var(--shade); }
 
-#beginBtn { margin-top: 26px; }
-
+/* ── Brass plaque buttons ── */
 .begin-btn, .ghost-btn {
+  position: relative; overflow: hidden;
   cursor: pointer;
-  font-family: var(--font-display); font-size: 18px;
-  padding: 13px 34px;
-  border-radius: 100px;
-  transition: transform 0.3s var(--ease), box-shadow 0.3s, background 0.3s, opacity 0.3s;
+  font-family: var(--font-display); font-weight: 700;
+  font-size: 16px; letter-spacing: 0.18em; text-transform: uppercase;
+  padding: 15px 38px;
+  border-radius: 3px;
+  transition: transform 0.3s var(--ease), box-shadow 0.3s, border-color 0.3s, color 0.3s, opacity 0.3s;
 }
 .begin-btn {
   color: #2A1406;
   border: none;
-  background: linear-gradient(180deg, #F6DE98, #D2A640 55%, #A87F16);
-  box-shadow: 0 0 0 1px rgba(255, 236, 180, 0.35) inset, 0 10px 34px rgba(255, 170, 60, 0.28);
+  background: linear-gradient(180deg, #F8E6A8 0%, #DDB24E 47%, #B3872A 53%, #E4C062 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 214, 0.6),
+    inset 0 0 0 4px rgba(122, 88, 22, 0.35),
+    inset 0 0 0 5px rgba(255, 238, 190, 0.35),
+    0 2px 0 #5E430C,
+    0 10px 34px rgba(255, 170, 60, 0.28);
 }
-.begin-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(255, 236, 180, 0.5) inset, 0 14px 44px rgba(255, 170, 60, 0.42); }
-.begin-btn:disabled { opacity: 0.4; cursor: wait; }
+/* A slow glint across the brass — transform only. */
+.begin-btn::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: translateX(-160%) skewX(-18deg);
+  animation: glint 5s ease-in-out 2s infinite;
+  pointer-events: none;
+}
+@keyframes glint { 0% { transform: translateX(-160%) skewX(-18deg); } 28%, 100% { transform: translateX(380%) skewX(-18deg); } }
+.begin-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 214, 0.7),
+    inset 0 0 0 4px rgba(122, 88, 22, 0.35),
+    inset 0 0 0 5px rgba(255, 238, 190, 0.4),
+    0 2px 0 #5E430C,
+    0 14px 46px rgba(255, 170, 60, 0.45);
+}
+.begin-btn:disabled { opacity: 0.45; cursor: wait; }
+.begin-btn:disabled::after { animation: none; }
 .ghost-btn {
   color: var(--ivory);
-  background: rgba(8, 3, 5, 0.35);
+  background: rgba(8, 3, 5, 0.45);
   border: 1px solid var(--hair);
+  box-shadow: inset 0 0 0 3px rgba(8, 3, 5, 0.4), inset 0 0 0 4px rgba(232, 201, 106, 0.12);
 }
-.ghost-btn:hover { border-color: var(--brass-lt); transform: translateY(-2px); }
+.ghost-btn:hover { border-color: var(--brass-lt); color: var(--brass-lt); transform: translateY(-2px); }
 .begin-btn:active, .ghost-btn:active { transform: scale(0.97); }
 
 .link-btn {
-  display: block; margin: 14px auto 0; padding: 6px 12px;
+  display: block; margin: 16px auto 0; padding: 6px 12px;
   background: none; border: none; cursor: pointer;
-  font-family: var(--font-body); font-size: 14px; color: var(--ivory-faint);
+  font-family: var(--font-display); font-style: italic; font-size: 17px; color: var(--ivory-faint);
   transition: color 0.2s;
 }
 .link-btn:hover { color: var(--brass-lt); }
 
 .steps {
   list-style: none;
-  display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 20px;
-  margin: 26px 0 12px;
-  font-size: 13px; color: var(--ivory-faint);
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 26px;
+  margin: 22px 0 12px;
+  font-family: var(--font-display); font-style: italic; font-size: 17px; color: var(--ivory-dim);
   counter-reset: step;
 }
 .steps li { counter-increment: step; text-shadow: var(--shade); }
 .steps li::before {
-  content: counter(step, devanagari) '. ';
-  color: var(--brass);
+  content: counter(step, upper-roman);
+  margin-right: 0.55em;
+  font-style: normal; font-weight: 700; font-size: 13px; letter-spacing: 0.1em;
+  color: var(--brass-lt);
 }
 
-#statusLine { font-size: 12px; color: var(--ivory-faint); }
+#statusLine { font-size: 12px; color: var(--ivory-faint); letter-spacing: 0.02em; }
 #statusLine .dot { margin: 0 8px; opacity: 0.5; }
 #statusLine .ready { color: var(--leaf); }
 #statusLine .warn  { color: #F08A70; }
 
 /* ═══════════════════════════════════════════
-   SANKALP MOMENT
+   SANKALP — words spoken while walking in
 ═══════════════════════════════════════════ */
 #sankalpMoment {
   position: absolute; inset: 0; z-index: 45;
-  display: grid; place-items: center; padding: 24px;
-  background: radial-gradient(ellipse at 50% 55%, rgba(8, 3, 5, 0.25), rgba(8, 3, 5, 0.8));
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 24px 24px 13vh;
+  background: linear-gradient(180deg, transparent 55%, rgba(6, 2, 4, 0.6) 100%);
   opacity: 0; visibility: hidden; pointer-events: none;
-  transition: opacity 1.1s var(--ease), visibility 1.1s;
+  transition: opacity 1.2s var(--ease), visibility 1.2s;
 }
 #sankalpMoment.show { opacity: 1; visibility: visible; }
 #sankalpLine {
-  max-width: 680px; text-align: center;
-  font-family: var(--font-display); font-size: clamp(22px, 3.6vw, 34px); line-height: 1.6;
-  color: #FFE7B0; text-shadow: 0 0 24px var(--gold-glow), var(--shade);
+  max-width: 720px; text-align: center;
+  font-family: var(--font-display); font-style: italic; font-weight: 500;
+  font-size: clamp(24px, 3.4vw, 38px); line-height: 1.4;
+  color: var(--cream); text-shadow: 0 0 24px var(--gold-glow), var(--shade);
 }
 
 /* ═══════════════════════════════════════════
@@ -244,108 +265,124 @@ body:not(.loading) #startInner > :nth-child(n+5) { animation-delay: 0.6s; }
   transition: opacity 1s var(--ease), transform 1s var(--ease);
 }
 body.playing #counter, body.playing #lyrics, body.finale #lyrics { opacity: 1; }
-body.playing #controls, body.finished #controls { opacity: 0.75; pointer-events: auto; }
+body.playing #controls, body.finished #controls { opacity: 0.8; pointer-events: auto; }
 body.playing #controls:hover { opacity: 1; }
 body.playing #hint.show { opacity: 1; }
 
-/* Guidance appears only when something needs doing, then leaves. */
+/* Guidance appears only when something needs doing, then leaves.
+   Text is left in place when hidden, so it fades rather than blinking empty. */
 #hint {
-  position: absolute; top: max(20px, env(safe-area-inset-top)); left: 50%;
+  position: absolute; top: max(22px, env(safe-area-inset-top)); left: 50%;
   transform: translateX(-50%);
   z-index: 16; max-width: 90vw;
-  padding: 7px 20px;
-  border-radius: 100px;
-  background: rgba(8, 3, 5, 0.55);
+  padding: 8px 24px 9px;
+  border-radius: 3px;
+  background: rgba(8, 3, 5, 0.6);
   border: 1px solid var(--hair);
-  font-size: 16px; color: var(--ivory);
+  box-shadow: inset 0 0 0 3px rgba(8, 3, 5, 0.5), inset 0 0 0 4px rgba(232, 201, 106, 0.1);
+  font-family: var(--font-display); font-style: italic; font-weight: 500;
+  font-size: 20px; color: var(--cream);
   text-align: center; white-space: nowrap;
 }
-#hint.warn { border-color: rgba(240, 138, 112, 0.55); }
-/* Text is left in place when hidden, so it fades out rather than blinking empty. */
+#hint.warn { border-color: rgba(240, 138, 112, 0.6); }
 
-/* Parikrama count, bottom-left */
+/* Parikrama ring, bottom-left: eleven flames around a brass circle */
 #counter {
-  position: absolute; left: 26px; bottom: 26px; z-index: 15;
-  width: 92px; text-align: center;
+  position: absolute; left: 26px; bottom: 24px; z-index: 15;
+  width: 104px; text-align: center;
 }
-#parikramaRing { width: 92px; height: 92px; transform: rotate(-90deg); display: block; }
-.ring-track    { fill: none; stroke: rgba(246, 237, 220, 0.14); stroke-width: 3; }
+#parikramaRing { width: 104px; height: 104px; display: block; overflow: visible; }
+.ring-outer    { fill: rgba(8, 3, 5, 0.45); stroke: var(--brass-lt); stroke-opacity: 0.35; stroke-width: 0.8; }
+.ring-track    { fill: none; stroke: rgba(246, 237, 220, 0.12); stroke-width: 2; }
 .ring-progress {
-  fill: none; stroke: var(--brass-lt); stroke-width: 3; stroke-linecap: round;
+  fill: none; stroke: #F3D383; stroke-width: 2.4; stroke-linecap: round;
   transition: stroke-dashoffset 0.25s linear;
 }
-.pip { fill: rgba(246, 237, 220, 0.22); transition: fill 0.5s; }
-.pip.lit { fill: #FFD27A; }
+.pip { fill: rgba(246, 237, 220, 0.22); transition: fill 0.6s; }
+.pip.lit { fill: #FFC45A; }
 #counter .count {
-  position: absolute; top: 0; left: 0; width: 92px; height: 92px;
+  position: absolute; top: 0; left: 0; width: 104px; height: 104px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   line-height: 1;
 }
-#parikramaValue { font-family: var(--font-display); font-weight: 400; font-size: 32px; color: #FFE7B0; text-shadow: var(--shade); }
-#parikramaTotal { font-size: 12px; color: var(--ivory-faint); margin-top: 2px; }
-#counter em { display: block; margin-top: 6px; font-style: normal; font-size: 13px; color: var(--ivory-dim); text-shadow: var(--shade); }
+#parikramaValue { font-family: var(--font-display); font-weight: 600; font-size: 40px; color: var(--cream); text-shadow: var(--shade); }
+#parikramaTotal { font-family: var(--font-display); font-style: italic; font-size: 14px; color: var(--ivory-faint); margin-top: 1px; }
+#counter em {
+  display: block; margin-top: 8px;
+  font-family: var(--font-display); font-style: normal; font-weight: 700;
+  font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase;
+  color: var(--brass-lt); text-shadow: var(--shade);
+}
 
 /* Controls, a quiet column on the right edge */
 #controls {
   position: absolute; top: 50%; right: 18px; z-index: 17;
   transform: translateY(-50%);
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 10px;
 }
 .icon-btn {
-  width: 42px; height: 42px;
+  width: 44px; height: 44px;
   display: grid; place-items: center;
   border-radius: 50%; cursor: pointer;
-  background: rgba(8, 3, 5, 0.45);
+  background: rgba(8, 3, 5, 0.5);
   border: 1px solid var(--hair);
+  box-shadow: inset 0 0 0 3px rgba(8, 3, 5, 0.5), inset 0 0 0 4px rgba(232, 201, 106, 0.14);
   color: var(--ivory);
-  transition: transform 0.2s var(--ease), border-color 0.2s, background 0.2s;
+  transition: transform 0.2s var(--ease), border-color 0.2s, color 0.2s;
 }
 .icon-btn svg {
   width: 20px; height: 20px;
-  fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
 }
-.icon-btn:hover  { border-color: var(--brass-lt); background: rgba(40, 14, 10, 0.7); }
+.icon-btn:hover  { border-color: var(--brass-lt); color: var(--brass-lt); }
 .icon-btn:active { transform: scale(0.92); }
 body.finished #bellBtn, body.finished #flowerBtn { display: none; }
 
-/* Camera mirror, bottom-right: a small round glass, not a debug window */
+/* Camera mirror, bottom-right: a small glass in a brass rim */
 #cameraWidget {
-  position: absolute; right: 26px; bottom: 26px; z-index: 16;
-  width: 104px; height: 104px;
+  position: absolute; right: 24px; bottom: 24px; z-index: 16;
+  width: 112px; height: 112px; padding: 4px;
+  border-radius: 50%;
+  background: conic-gradient(from 210deg, #6E5010, #F2D98A, #B08426, #F8E6A8, #8A6A18, #6E5010);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7);
 }
-body.playing #cameraWidget:not(.stowed) { opacity: 0.9; }
+body.playing #cameraWidget:not(.stowed) { opacity: 0.95; }
 #cameraPreviewCanvas {
   display: block; width: 100%; height: 100%;
   object-fit: cover;
   border-radius: 50%;
-  border: 1px solid var(--hair);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);
+  border: 2px solid #2A1406;
 }
 #cameraWidgetDot {
-  position: absolute; top: 8px; right: 8px;
-  width: 8px; height: 8px; border-radius: 50%;
+  position: absolute; top: 10px; right: 10px;
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1px solid #2A1406;
   background: var(--leaf); box-shadow: 0 0 8px var(--leaf);
   transition: background 0.3s, box-shadow 0.3s;
 }
 #cameraWidgetDot.searching { background: #FFCD6E; box-shadow: 0 0 8px #FFCD6E; }
 #cameraWidgetDot.no-signal { background: var(--ivory-faint); box-shadow: none; }
 
-/* Lyrics, set as subtitles */
+/* Lyrics, set as subtitles — the aarti itself stays in Devanagari */
 #lyrics {
-  position: absolute; left: 50%; bottom: max(30px, env(safe-area-inset-bottom));
+  position: absolute; left: 50%; bottom: max(28px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  z-index: 15; width: min(760px, 62vw);
+  z-index: 15; width: min(780px, 60vw);
   text-align: center;
 }
 #lyricsLine {
-  font-family: var(--font-display);
+  font-family: var(--font-lyrics);
   font-size: clamp(18px, 2.3vw, 26px); line-height: 1.75;
-  color: #FFF1D2;
+  color: var(--cream);
   text-shadow: 0 0 18px rgba(255, 170, 60, 0.35), var(--shade);
   transition: opacity 0.6s var(--ease);
 }
 #lyricsLine.out { opacity: 0; }
-#verseCounter { display: block; margin-top: 6px; font-size: 12px; color: var(--ivory-faint); letter-spacing: 0.1em; text-shadow: var(--shade); }
+#verseCounter {
+  display: block; margin-top: 4px;
+  font-family: var(--font-display); font-style: italic; font-size: 15px;
+  color: var(--ivory-faint); letter-spacing: 0.08em; text-shadow: var(--shade);
+}
 
 /* ═══════════════════════════════════════════
    BLESSING
@@ -354,36 +391,41 @@ body.playing #cameraWidget:not(.stowed) { opacity: 0.9; }
   position: absolute; inset: 0; z-index: 50;
   display: flex; align-items: flex-end; justify-content: center;
   padding: 24px 24px max(6vh, 24px); overflow-y: auto;
-  background: linear-gradient(180deg, transparent 25%, rgba(8, 3, 5, 0.6) 55%, rgba(8, 3, 5, 0.94) 100%);
-  animation: fadeIn 1.6s var(--ease);
+  background: linear-gradient(180deg, transparent 22%, rgba(6, 2, 4, 0.55) 50%, rgba(6, 2, 4, 0.95) 100%);
+  animation: fadeIn 1.8s var(--ease);
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-#blessingInner { width: min(600px, 100%); text-align: center; }
-#blessingInner > * { animation: rise 1.4s var(--ease) both; }
+#blessingInner { width: min(640px, 100%); text-align: center; }
+#blessingInner > * { animation: rise 1.5s var(--ease) both; }
 #blessingInner > :nth-child(2) { animation-delay: 0.2s; }
-#blessingInner > :nth-child(3) { animation-delay: 0.5s; }
-#blessingInner > :nth-child(4) { animation-delay: 0.8s; }
-#blessingInner > :nth-child(n+5) { animation-delay: 1.1s; }
-#blessingTitle {
-  margin: 2px 0 8px;
-  font-family: var(--font-display); font-weight: 400;
-  font-size: clamp(40px, 7vw, 62px); line-height: 1.3;
-  color: #FFE7B0; text-shadow: 0 0 30px var(--gold-glow), var(--shade);
+#blessingInner > :nth-child(3) { animation-delay: 0.45s; }
+#blessingInner > :nth-child(4) { animation-delay: 0.7s; }
+#blessingInner > :nth-child(5) { animation-delay: 0.95s; }
+#blessingInner > :nth-child(n+6) { animation-delay: 1.2s; }
+#blessingTitle { margin-top: 8px; font-size: clamp(54px, 8vw, 92px); }
+#blessingName {
+  font-family: var(--font-display); font-style: italic; font-weight: 500;
+  font-size: clamp(21px, 2.6vw, 27px); color: var(--ivory); text-shadow: var(--shade); line-height: 1.45;
 }
-#blessingName { font-family: var(--font-display); font-size: clamp(18px, 2.4vw, 22px); color: var(--ivory); text-shadow: var(--shade); line-height: 1.6; }
-#blessingText { margin-top: 6px; font-size: 16px; color: var(--brass-lt); text-shadow: var(--shade); }
-#blessingMeta { margin-top: 14px; font-size: 13px; color: var(--ivory-faint); }
-#blessing .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 24px; }
-#blessing .ghost-btn, #blessing .begin-btn { font-size: 16px; padding: 11px 26px; }
+#blessingText { margin-top: 8px; font-size: 16px; color: var(--brass-lt); text-shadow: var(--shade); }
+#blessingMeta {
+  margin-top: 16px;
+  font-family: var(--font-display); font-style: italic; font-size: 16px;
+  color: var(--ivory-faint); letter-spacing: 0.04em;
+}
+#blessing .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 26px; }
+#blessing .begin-btn, #blessing .ghost-btn { font-size: 14px; padding: 13px 26px; }
 
 /* Darshan: every piece of chrome steps aside */
 #darshanHint {
   position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
-  z-index: 55; font-size: 13px; color: var(--ivory-faint); text-shadow: var(--shade);
+  z-index: 55;
+  font-family: var(--font-display); font-style: italic; font-size: 16px;
+  color: var(--ivory-faint); text-shadow: var(--shade);
   opacity: 0; pointer-events: none; transition: opacity 1s var(--ease) 1.5s;
 }
-body.darshan #darshanHint { opacity: 0.8; }
-body.darshan #blessing, body.darshan #controls, body.darshan .temple-bell { display: none !important; }
+body.darshan #darshanHint { opacity: 0.85; }
+body.darshan #blessing, body.darshan #controls { display: none !important; }
 body.darshan #vignette { opacity: 0.4; }
 
 /* ═══════════════════════════════════════════
@@ -436,18 +478,26 @@ body.darshan #vignette { opacity: 0.4; }
    RESPONSIVE
 ═══════════════════════════════════════════ */
 @media (max-width: 820px) {
-  #lyrics { width: 88vw; bottom: 132px; }
-  #counter { left: 16px; bottom: 16px; }
-  #cameraWidget { right: 16px; bottom: 16px; width: 88px; height: 88px; }
-  .temple-bell { width: 32px; height: 48px; }
+  #lyrics { width: 88vw; bottom: 150px; }
+  #counter { left: 14px; bottom: 14px; transform: scale(0.85); transform-origin: 0 100%; }
+  #cameraWidget { right: 14px; bottom: 14px; width: 92px; height: 92px; }
+  .steps { font-size: 15px; }
 }
 
 @media (max-width: 560px) {
   .steps { flex-direction: column; gap: 4px; align-items: center; }
-  #hint { font-size: 14px; white-space: normal; }
-  #controls { right: 8px; gap: 6px; }
-  .icon-btn { width: 38px; height: 38px; }
-  .temple-bell { display: none; }
+  #hint { font-size: 17px; white-space: normal; }
+  #controls { right: 8px; gap: 8px; }
+  .icon-btn { width: 40px; height: 40px; }
+  .begin-btn { padding: 14px 26px; font-size: 14px; }
+  .invocation { letter-spacing: 0.3em; }
+}
+
+/* Short landscape phones: keep the doors visible between the words. */
+@media (max-height: 520px) {
+  #mainTitle { font-size: 44px; }
+  .ornament { margin: 6px auto; }
+  .steps { display: none; }
 }
 
 /* Respect reduced motion — the aarti still works, the chrome just stops moving. */
@@ -459,7 +509,7 @@ body.darshan #vignette { opacity: 0.4; }
   }
 }
 
-button:focus-visible, input:focus-visible, .choice-card:focus-visible {
+button:focus-visible, .choice-card:focus-visible {
   outline: 2px solid var(--brass-lt);
   outline-offset: 3px;
 }

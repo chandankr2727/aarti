@@ -1,29 +1,38 @@
-# जय माँ अम्बे — माँ दुर्गा की आरती (Hindi)
+# Jai Maa Ambe — Durga Aarti
 
 A self-contained frontend that lives alongside the Rath Yatra game. The
 devotee holds a real aarti thali (or any bright round object) in front of the
 webcam; the app finds the plate in their hand and turns their circling into a
 brass thali revolving around the pratima. Eleven parikrama completes the aarti
-and lights the pandal. The whole interface is in Hindi; the aarti sung is
-*जय अम्बे गौरी*, one pad per parikrama.
+and lights the pandal. The interface chrome is in English; the aarti sung is
+kept in Hindi (Devanagari) — *Jai Ambe Gauri*, one verse per parikrama —
+since that's the actual prayer being recited, not UI text.
 
 ## The experience
 
 1. **Arrival** — a single diya on black while the pratima loads (with real
-   progress), then the veil lifts onto the lit pandal.
-2. **Sankalp** — the devotee may give their name and a मनोकामना. Both are
-   optional; the name is remembered for next time.
-3. **Aarti** — the camera walks slowly up to her. On-screen chrome is kept to
-   the edges: a parikrama ring, the pad as subtitles, a small round mirror,
-   and guidance that appears only when something needs doing.
-   Extras: घंटी button / `Space` rings the temple bell; पुष्प button (or two
-   open palms) offers pushpanjali.
-4. **Blessing** — three bells, a petal shower, the closing pad, then a
-   personal आशीर्वाद with the time taken and how many aartis this device has
-   done. *आशीर्वाद चित्र सहेजें* composes a 1080×1350 keepsake card (lit
-   pandal + blessing + Hindi date) and opens the phone's share sheet, or
-   downloads on desktop. *दर्शन करें* hides everything so the devotee can just
-   look at her (head-tracked on capable devices); touch to return.
+   progress), then the veil lifts.
+2. **The temple entrance** — the devotee stands outside a carved teak door
+   (brass studs, knockers, lotus panels) in a sindoor-red wall, under a
+   painted ॐ arch and a marigold toran, with two brass lamps burning at the
+   threshold and a bell hanging beside it.
+3. **Open the Temple Doors** — the bell rings, the doors swing inward, and
+   the camera walks through the doorway into the sanctum (a timed, eased
+   4-second walk) while the sankalp line is spoken on screen.
+4. **Aarti** — inside: brass bells that really swing on every parikrama,
+   marigold garlands framing the view, a ring of 22 clay diyas that light two
+   per parikrama, incense smoke curling up, soft light shafts with drifting
+   dust, and sparks lifting off the thali. On-screen chrome stays at the
+   edges: a brass parikrama ring with eleven flames, the verse as subtitles,
+   a brass-rimmed camera mirror, and guidance only when needed.
+   Extras: bell button / `Space` rings the bells; flower button (or two open
+   palms) offers pushpanjali.
+5. **Blessing** — three bells, a petal shower, every diya lit, the closing
+   verse, then the blessing with the time taken and how many aartis this
+   device has done. *Save Blessing Card* composes a 1080×1350 keepsake image
+   and opens the share sheet (or downloads on desktop). *Darshan* hides
+   everything so the devotee can just look at her. *Leave the Temple* walks
+   back out and the doors close behind you.
 
 Sound is deliberately minimal: a soft bell and a soft drum on each
 parikrama, nothing continuous.
@@ -41,7 +50,11 @@ cost is controlled around it:
 | No `preserveDrawingBuffer` | Avoids a per-frame buffer copy; `snapshot()` renders and reads back in one task. |
 | Idol matrices frozen | Skips per-frame matrix updates for the model's node tree. |
 | Hands only run during the aarti | The start screen does no hand inference. |
-| Low tier (≤4 cores / ≤4 GB, or `?quality=low`) | No MSAA, pixel ratio ≤1, ~30fps cap, lite hand model, no face tracking, one fewer light, fewer petals. `?quality=high` forces the full path. |
+| Pratima not drawn behind shut doors | On the start screen the doors hide her, so she is skipped entirely. Her shadow bake, texture upload and shader compile happen in one hidden frame while the loading veil is still up. |
+| Atmosphere is GPU-driven | Smoke, dust and diya flicker animate in shaders from one time uniform — no per-frame JavaScript. Each effect is one draw call; all flowers are one instanced mesh. |
+| One warm light, two jobs | The door lamp outside and the diya uplight inside are the same light, moved — every point light costs per pixel. |
+| Bloom (high tier only) | Flames and gold glow via UnrealBloomPass, loaded lazily; it is the first thing `adapt()` switches off if frames slow down. |
+| Low tier (≤4 cores / ≤4 GB, or `?quality=low`) | No bloom, no MSAA, pixel ratio ≤1, ~30fps cap, lite hand model, no face tracking, one fewer light, fewer petals/smoke/dust, simpler marigolds. `?quality=high` forces the full path. |
 
 Animation is time-based, so capped or struggling devices move at the same
 speed.
@@ -228,5 +241,6 @@ two negatives.
 
 The bell and drum are synthesised with the Web Audio API; there are no audio
 files.
-#   a a r t i  
+#   a a r t i 
+ 
  

@@ -5,13 +5,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Jai Maa Ambe · Durga Aarti</title>
-  <meta name="description" content="Offer aarti to Maa Durga — hold a thali up to the camera and circle it, and the plate will revolve before the pratima." />
+  <meta name="description" content="Open the temple doors and offer aarti to Maa Durga — hold a thali up to the camera and circle it, and the plate revolves before the pratima." />
   <meta name="theme-color" content="#0B0408" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Tiro+Devanagari+Hindi&family=Mukta:wght@300;400;500;600&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Tiro+Devanagari+Hindi&family=Mukta:wght@300;400;500;600&display=swap"
     rel="stylesheet" />
 
   <!-- MediaPipe Hands — locates the palm holding the thali -->
@@ -40,40 +40,29 @@
   <video id="webcam" autoplay playsinline muted></video>
   <canvas id="motionCanvas"></canvas>
 
-  <!-- Line icons, drawn once and reused -->
+  <!-- Line icons and ornament, drawn once and reused -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M12 3v1.5M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2H5l1.5-2ZM10 20.5a2 2 0 0 0 4 0" /></symbol>
-    <!-- Lotus -->
     <symbol id="i-flower" viewBox="0 0 24 24"><path d="M12 19c-2.2-2.2-3-5.8 0-11 3 5.2 2.2 8.8 0 11ZM12 19c-3.5.2-7-1.8-8.5-6 3.3-.4 6 1 8.5 6ZM12 19c3.5.2 7-1.8 8.5-6-3.3-.4-6 1-8.5 6ZM6 20.5h12" /></symbol>
     <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4v-5ZM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" /></symbol>
     <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4v-5ZM16 9.5l5 5M21 9.5l-5 5" /></symbol>
     <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
-    <!-- Brass temple bell, hung from a chain -->
-    <symbol id="temple-bell" viewBox="0 0 60 90">
-      <defs>
-        <linearGradient id="brassGrad" x1="0" x2="1">
-          <stop offset="0" stop-color="#7A5A12" /><stop offset="0.35" stop-color="#F2D98A" />
-          <stop offset="0.6" stop-color="#C9A227" /><stop offset="1" stop-color="#5E430C" />
-        </linearGradient>
-      </defs>
-      <path d="M30 0v18" stroke="#8A6A18" stroke-width="2" />
-      <circle cx="30" cy="21" r="4" fill="url(#brassGrad)" />
-      <path d="M30 24c-11 0-16 10-16 22v14l-5 7h42l-5-7V46c0-12-5-22-16-22Z" fill="url(#brassGrad)" />
-      <path d="M9 67h42" stroke="#5E430C" stroke-width="2" />
-      <circle cx="30" cy="74" r="5" fill="url(#brassGrad)" />
+    <!-- Lotus divider -->
+    <symbol id="ornament" viewBox="0 0 240 24">
+      <path class="orn-line" d="M6 13H92M148 13H234" />
+      <path class="orn-fill" d="M96 10l3 3-3 3-3-3ZM144 10l3 3-3 3-3-3Z" />
+      <path class="orn-fill" d="M120 2C125 7.5 125 14.5 120 20C115 14.5 115 7.5 120 2Z" />
+      <path class="orn-fill soft" d="M120 20C112.5 19 107.5 13.5 105.5 8C112 9 117 13.5 120 20ZM120 20C127.5 19 132.5 13.5 134.5 8C128 9 123 13.5 120 20Z" />
+      <path class="orn-line" d="M109 22.5H131" />
     </symbol>
   </svg>
 
   <div id="stage">
 
-    <!-- The entire pandal is rendered here by three.js -->
+    <!-- The temple — entrance, doors, sanctum — is rendered here by three.js -->
     <canvas id="sceneCanvas" aria-hidden="true"></canvas>
     <div id="vignette" aria-hidden="true"></div>
-
-    <!-- Brass bells that swing on each completed parikrama -->
-    <svg class="temple-bell left" aria-hidden="true"><use href="#temple-bell" /></svg>
-    <svg class="temple-bell right" aria-hidden="true"><use href="#temple-bell" /></svg>
 
     <!-- ══════════ LOADING — a single diya while the pratima arrives ══════════ -->
     <div id="veil" role="status" aria-live="polite">
@@ -82,40 +71,44 @@
       <div id="veilBar"><i id="veilFill"></i></div>
     </div>
 
-    <!-- ══════════ START ══════════ -->
+    <!-- ══════════ START — outside the temple doors ══════════ -->
     <section id="startScreen">
-      <div id="startInner">
-        <p class="invocation">॥ Shri Durgayai Namah ॥</p>
+      <header class="start-top">
+        <p class="invocation">Shri Durgayai Namah</p>
         <h1 id="mainTitle">Jai Maa Ambe</h1>
-        <p class="lede">Welcome to the evening aarti of Maa Durga</p>
+        <svg class="ornament" viewBox="0 0 240 24" aria-hidden="true"><use href="#ornament" /></svg>
+        <p class="lede">The evening aarti of Maa Durga</p>
+      </header>
 
-        <button id="beginBtn" class="begin-btn" type="button" disabled>Begin Aarti</button>
-
+      <div class="start-bottom">
+        <button id="beginBtn" class="begin-btn" type="button" disabled>Open the Temple Doors</button>
         <ol class="steps">
-          <li>Hold a thali or lamp in your hand</li>
-          <li>Circle it slowly in front of the camera</li>
-          <li>The aarti completes after eleven revolutions</li>
+          <li>Hold a thali or diya</li>
+          <li>Circle it slowly before the camera</li>
+          <li>Eleven rounds complete the aarti</li>
         </ol>
-
         <p id="statusLine"><span id="idolStatus">The pratima is arriving…</span><span class="dot">·</span><span id="cameraStatus">Getting the camera ready…</span></p>
       </div>
     </section>
 
-    <!-- ══════════ SANKALP — the moment before the aarti begins ══════════ -->
-    <div id="sankalpMoment" aria-live="polite"><p id="sankalpLine"></p></div>
+    <!-- ══════════ SANKALP — spoken while the camera walks in ══════════ -->
+    <div id="sankalpMoment" aria-live="polite">
+      <p id="sankalpLine">With devotion and faith,<br>this aarti is offered to Maa Ambe</p>
+    </div>
 
     <!-- ══════════ AARTI CHROME — kept to the edges, out of her way ══════════ -->
     <div id="hint" role="status" aria-live="polite"></div>
 
     <div id="counter" role="status" aria-live="polite">
       <svg id="parikramaRing" viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="ring-outer" cx="60" cy="60" r="57" />
         <circle class="ring-track" cx="60" cy="60" r="50" />
-        <circle id="ringProgress" class="ring-progress" cx="60" cy="60" r="50" />
+        <circle id="ringProgress" class="ring-progress" cx="60" cy="60" r="50" transform="rotate(-90 60 60)" />
         <g id="ringPips"></g>
       </svg>
       <div class="count">
         <strong id="parikramaValue">0</strong>
-        <span id="parikramaTotal">/ 11</span>
+        <span id="parikramaTotal">of 11</span>
       </div>
       <em>Parikrama</em>
     </div>
@@ -125,7 +118,7 @@
       <button id="flowerBtn" class="icon-btn" type="button" title="Offer flowers" aria-label="Offer flowers"><svg><use href="#i-flower" /></svg></button>
       <button id="muteBtn" class="icon-btn" type="button" title="Sound (M)" aria-label="Toggle sound"><svg><use id="muteIcon" href="#i-sound" /></svg></button>
       <button id="fullscreenBtn" class="icon-btn" type="button" title="Fullscreen (F)" aria-label="Fullscreen"><svg><use href="#i-full" /></svg></button>
-      <button id="restartBtn" class="icon-btn" type="button" title="Return to the start" aria-label="Return to the start"><svg><use href="#i-close" /></svg></button>
+      <button id="restartBtn" class="icon-btn" type="button" title="Leave the temple" aria-label="Leave the temple"><svg><use href="#i-close" /></svg></button>
     </nav>
 
     <aside id="cameraWidget" class="stowed" aria-label="Camera">
@@ -141,8 +134,9 @@
     <!-- ══════════ BLESSING — after the eleventh parikrama ══════════ -->
     <section id="blessing" class="hidden">
       <div id="blessingInner">
-        <p class="invocation">॥ Aarti Complete ॥</p>
+        <p class="invocation">Aarti Complete</p>
         <h2 id="blessingTitle">Jai Mata Di</h2>
+        <svg class="ornament" viewBox="0 0 240 24" aria-hidden="true"><use href="#ornament" /></svg>
         <p id="blessingName"></p>
         <p id="blessingText"></p>
         <p id="blessingMeta"></p>
@@ -151,7 +145,7 @@
           <button id="darshanBtn" class="ghost-btn" type="button">Darshan</button>
           <button id="againBtn" class="ghost-btn" type="button">Aarti Again</button>
         </div>
-        <button id="newBtn" class="link-btn" type="button">Start Over</button>
+        <button id="newBtn" class="link-btn" type="button">Leave the Temple</button>
       </div>
     </section>
 

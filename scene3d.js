@@ -8,6 +8,9 @@
 
    The thali orbits the idol on a fixed vertical circle and stays level —
    it never tilts and never wanders across the screen.
+
+   The visit starts outside: a temple entrance with carved doors that swing
+   open, and the camera walks through into the sanctum (see ATMOSPHERE).
 ═══════════════════════════════════════════════════════════════ */
 
 import * as THREE from 'three';
@@ -900,6 +903,756 @@ function makeOffering(tex, count = 120) {
   return points;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ATMOSPHERE — the things that make it feel like a real temple:
+// the entrance and its doors, marigold garlands, brass bells, a ring of
+// clay diyas, incense smoke, light shafts with dust, sparks off the thali.
+//
+// Every particle effect is a single draw call, and the continuous ones
+// (smoke, dust, diya flicker) animate entirely on the GPU from one shared
+// time uniform, so they cost no per-frame JavaScript.
+// ═══════════════════════════════════════════════════════════════
+
+// Shared by every custom shader. uScale converts world size to pixels,
+// matching PointsMaterial's size attenuation.
+const SHARED = { uTime: { value: 0 }, uScale: { value: 400 } };
+
+const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+
+// Tone mapping + sRGB for custom shaders, so they match the lit scene.
+const SHADER_TAIL = '#include <tonemapping_fragment>\n#include <colorspace_fragment>';
+
+function pointsShader(vertexShader, fragmentShader, uniforms = {}, blending = THREE.AdditiveBlending) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...SHARED, ...uniforms },
+    vertexShader,
+    fragmentShader: fragmentShader.replace('//TAIL', SHADER_TAIL),
+    transparent: true,
+    depthWrite: false,
+    blending,
+  });
+}
+
+// ───────────────────────────────────────────────────────────────
+// The temple entrance. The devotee arrives outside a carved teak door in
+// a sindoor-red wall; the doors swing inward and the camera walks through.
+// ───────────────────────────────────────────────────────────────
+const DOOR = { z: 11.8, halfW: 1.8, h: 4.2, thick: 0.12, face: 12.0 };
+
+// Carved teak leaf: colour, bump (relief) and a roughness/metalness map so
+// the brass bands really are metal and the wood really is wood.
+function doorTextures() {
+  const W = 512, H = Math.round(512 * DOOR.h / DOOR.halfW);
+  const col = makeCanvas(W, H), bmp = makeCanvas(W, H), rm = makeCanvas(W, H);
+  const c = col.getContext('2d'), b = bmp.getContext('2d'), m = rm.getContext('2d');
+
+  c.fillStyle = '#4A2814'; c.fillRect(0, 0, W, H);
+  b.fillStyle = 'rgb(128,128,128)'; b.fillRect(0, 0, W, H);
+  // glTF convention three.js follows: G = roughness, B = metalness.
+  m.fillStyle = 'rgb(0,178,0)'; m.fillRect(0, 0, W, H);
+
+  // Wood grain: long wavering strokes, light and dark.
+  for (let i = 0; i < 280; i++) {
+    const x0 = Math.random() * W, amp = 2 + Math.random() * 7;
+    const freq = 0.003 + Math.random() * 0.01, ph = Math.random() * 6.28;
+    c.strokeStyle = Math.random() < 0.5
+      ? `rgba(150,92,52,${0.05 + Math.random() * 0.1})`
+      : `rgba(18,7,2,${0.1 + Math.random() * 0.16})`;
+    c.lineWidth = 0.6 + Math.random() * 2.4;
+    c.beginPath();
+    for (let y = 0; y <= H; y += 12) {
+      const x = x0 + Math.sin(y * freq + ph) * amp;
+      if (y) c.lineTo(x, y); else c.moveTo(x, y);
+    }
+    c.stroke();
+  }
+
+  const brass = (x, y, w, h) => {
+    const g = c.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, '#7A5A12'); g.addColorStop(0.45, '#E9CF7E'); g.addColorStop(1, '#8A6A18');
+    c.fillStyle = g; c.fillRect(x, y, w, h);
+    b.fillStyle = 'rgb(176,176,176)'; b.fillRect(x, y, w, h);
+    m.fillStyle = 'rgb(0,80,255)'; m.fillRect(x, y, w, h);
+  };
+
+  const bevel = (ctx, x, y, w, h, s, light, dark) => {
+    ctx.fillStyle = light;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - s, y + s); ctx.lineTo(x + s, y + s); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + s, y + s); ctx.lineTo(x + s, y + h - s); ctx.lineTo(x, y + h); ctx.fill();
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + s, y + h - s); ctx.lineTo(x + w - s, y + h - s); ctx.lineTo(x + w, y + h); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - s, y + h - s); ctx.lineTo(x + w - s, y + s); ctx.fill();
+  };
+
+  // A carved lotus rosette: shadow pass, then highlight, so it reads as relief.
+  const rosette = (cx, cy, R) => {
+    for (const [ctx, style, off] of [
+      [c, 'rgba(0,0,0,0.5)', 3], [c, 'rgba(176,112,64,0.42)', 0],
+      [b, 'rgb(200,200,200)', 0],
+    ]) {
+      ctx.fillStyle = style;
+      for (const [n, r0, len, wide] of [[12, 0.55, 0.45, 0.16], [8, 0.28, 0.3, 0.13]]) {
+        for (let i = 0; i < n; i++) {
+          ctx.save();
+          ctx.translate(cx + off, cy + off);
+          ctx.rotate((i / n) * Math.PI * 2 + (n === 8 ? Math.PI / 8 : 0));
+          ctx.beginPath();
+          ctx.ellipse(0, -R * r0, R * wide, R * len, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+    // Brass boss at the centre
+    const g = c.createRadialGradient(cx - R * 0.05, cy - R * 0.05, 1, cx, cy, R * 0.16);
+    g.addColorStop(0, '#FFF0B8'); g.addColorStop(0.5, '#D4AE48'); g.addColorStop(1, '#6E5010');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(cx, cy, R * 0.16, 0, Math.PI * 2); c.fill();
+    m.fillStyle = 'rgb(0,70,255)';
+    m.beginPath(); m.arc(cx, cy, R * 0.16, 0, Math.PI * 2); m.fill();
+    b.fillStyle = 'rgb(230,230,230)';
+    b.beginPath(); b.arc(cx, cy, R * 0.16, 0, Math.PI * 2); b.fill();
+    // Ring around the whole rosette
+    c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 5;
+    c.beginPath(); c.arc(cx + 2, cy + 2, R * 1.02, 0, Math.PI * 2); c.stroke();
+    c.strokeStyle = 'rgba(176,112,64,0.35)'; c.lineWidth = 3;
+    c.beginPath(); c.arc(cx, cy, R * 1.02, 0, Math.PI * 2); c.stroke();
+  };
+
+  // Three recessed panels, a lotus carved in each.
+  const s = H / 1195;
+  const panels = [[70, 95 * s, W - 140, 320 * s], [70, 460 * s, W - 140, 330 * s], [70, 835 * s, W - 140, 250 * s]];
+  for (const [x, y, w, h] of panels) {
+    bevel(c, x, y, w, h, 14, 'rgba(210,150,95,0.28)', 'rgba(0,0,0,0.55)');
+    c.fillStyle = 'rgba(0,0,0,0.2)';
+    c.fillRect(x + 14, y + 14, w - 28, h - 28);
+    bevel(b, x, y, w, h, 14, 'rgb(104,104,104)', 'rgb(104,104,104)');
+    b.fillStyle = 'rgb(84,84,84)';
+    b.fillRect(x + 14, y + 14, w - 28, h - 28);
+    rosette(x + w / 2, y + h / 2, Math.min(w, h) * 0.36);
+    // Small carved buds in the corners
+    for (const [dx, dy] of [[34, 34], [w - 34, 34], [34, h - 34], [w - 34, h - 34]]) {
+      c.fillStyle = 'rgba(0,0,0,0.45)';
+      c.beginPath(); c.arc(x + dx + 2, y + dy + 2, 9, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(176,112,64,0.45)';
+      c.beginPath(); c.arc(x + dx, y + dy, 9, 0, Math.PI * 2); c.fill();
+      b.fillStyle = 'rgb(190,190,190)';
+      b.beginPath(); b.arc(x + dx, y + dy, 9, 0, Math.PI * 2); b.fill();
+    }
+  }
+
+  // Brass straps along every edge and a kick plate at the foot.
+  brass(0, 0, W, 26);
+  brass(0, 0, 24, H);
+  brass(W - 24, 0, 24, H);
+  brass(0, H - 26, W, 26);
+  brass(24, 1120 * s, W - 48, 50 * s);
+
+  const toTex = (canvas, srgb) => {
+    const t = new THREE.CanvasTexture(canvas);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  };
+  return {
+    map: toTex(col, true), bump: toTex(bmp, false), rm: toTex(rm, false),
+    // Stud positions in the leaf's own 0..1 UV space (u across, v up).
+    studs: (() => {
+      const out = [];
+      for (let v = 0.06; v < 0.97; v += 0.075) { out.push([0.024, v], [0.976, v]); }
+      for (const py of [22 * s, 440 * s, 812 * s, 1105 * s]) {
+        for (const u of [0.22, 0.4, 0.6, 0.78]) out.push([u, 1 - py / H]);
+      }
+      return out;
+    })(),
+  };
+}
+
+// Mottled sindoor-red lime plaster for the outer wall.
+function plasterTexture() {
+  const t = canvasTexture(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#8A2A1A';
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < 90; i++) {
+      const x = Math.random() * w, y = Math.random() * h, r = 20 + Math.random() * 90;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const dark = Math.random() < 0.5;
+      g.addColorStop(0, dark ? 'rgba(60,12,6,0.22)' : 'rgba(190,80,40,0.16)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    // Hairline cracks and drips
+    ctx.strokeStyle = 'rgba(40,8,4,0.25)';
+    for (let i = 0; i < 14; i++) {
+      ctx.lineWidth = 0.6 + Math.random();
+      let x = Math.random() * w, y = Math.random() * h;
+      ctx.beginPath(); ctx.moveTo(x, y);
+      for (let k = 0; k < 6; k++) { x += (Math.random() - 0.5) * 30; y += Math.random() * 26; ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+  });
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  // ShapeGeometry UVs are world units; one tile per four units.
+  t.repeat.set(0.25, 0.25);
+  return t;
+}
+
+// Painted frieze: gold scallops and dots on red, repeated along the wall.
+function friezeTexture() {
+  const t = canvasTexture(256, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#6E1410'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#E3BC58';
+    ctx.fillRect(0, 0, w, 6); ctx.fillRect(0, h - 6, w, 6);
+    ctx.strokeStyle = '#E3BC58'; ctx.lineWidth = 4;
+    for (let x = 0; x < w; x += 32) {
+      ctx.beginPath(); ctx.arc(x + 16, 14, 14, 0, Math.PI); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x + 16, 38, 5, 0, Math.PI * 2); ctx.fillStyle = '#F2D98A'; ctx.fill();
+    }
+  });
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.repeat.set(20, 1);
+  return t;
+}
+
+// The arch over the door: ॐ in gold on sindoor, with rays.
+function omTexture() {
+  const paint = (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h);
+    const g = ctx.createRadialGradient(w / 2, h / 2, 10, w / 2, h / 2, w / 2);
+    g.addColorStop(0, '#B8321E'); g.addColorStop(1, '#5E0E0A');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    for (let i = 0; i < 36; i++) {
+      ctx.rotate(Math.PI / 18);
+      ctx.fillStyle = i % 2 ? 'rgba(232,201,106,0.28)' : 'rgba(255,225,150,0.12)';
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(8, -w * 0.5); ctx.lineTo(-8, -w * 0.5); ctx.fill();
+    }
+    ctx.restore();
+    // CircleGeometry's UVs put the upper half-disc in the top half of the
+    // texture, so the symbol sits above centre.
+    ctx.fillStyle = '#F4D77E';
+    ctx.shadowColor = 'rgba(255,190,80,0.8)';
+    ctx.shadowBlur = 18;
+    ctx.font = `${Math.round(h * 0.3)}px "Tiro Devanagari Hindi", "Nirmala UI", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('ॐ', w / 2, h * 0.3);
+  };
+  const t = canvasTexture(512, 512, paint);
+  t.colorSpace = THREE.SRGBColorSpace;
+  // Repaint once the Devanagari web font is ready, so ॐ uses it.
+  document.fonts?.ready.then(() => { paint(t.image.getContext('2d'), 512, 512); t.needsUpdate = true; });
+  return t;
+}
+
+function makeEntrance(glowTex) {
+  const g = new THREE.Group();
+  const sand = new THREE.MeshStandardMaterial({ color: 0xB88E62, roughness: 0.88 });
+
+  // The facade: one plane with the doorway cut out. Its UVs are world
+  // units, so the plaster tiles evenly however big the wall is.
+  const wall = new THREE.Shape();
+  wall.moveTo(-16, -0.5); wall.lineTo(16, -0.5); wall.lineTo(16, 14); wall.lineTo(-16, 14); wall.lineTo(-16, -0.5);
+  const hole = new THREE.Path();
+  hole.moveTo(-DOOR.halfW, -0.4); hole.lineTo(-DOOR.halfW, DOOR.h); hole.lineTo(DOOR.halfW, DOOR.h); hole.lineTo(DOOR.halfW, -0.4); hole.lineTo(-DOOR.halfW, -0.4);
+  wall.holes.push(hole);
+  const facade = new THREE.Mesh(new THREE.ShapeGeometry(wall),
+    new THREE.MeshStandardMaterial({ map: plasterTexture(), roughness: 0.92 }));
+  facade.position.z = DOOR.face;
+  g.add(facade);
+
+  // Painted frieze and a dark stone dado along the wall
+  const frieze = new THREE.Mesh(new THREE.BoxGeometry(32, 0.55, 0.12),
+    new THREE.MeshStandardMaterial({ map: friezeTexture(), roughness: 0.7, metalness: 0.2 }));
+  frieze.position.set(0, 7.05, DOOR.face + 0.06);
+  g.add(frieze);
+  const dado = new THREE.Mesh(new THREE.BoxGeometry(32, 0.7, 0.14), MAT.stone);
+  dado.position.set(0, 0.35, DOOR.face + 0.07);
+  g.add(dado);
+
+  // Pilasters flanking the entrance
+  for (const side of [-1, 1]) {
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.55, 7.4, 0.28), sand);
+    shaft.position.set(side * 3.7, 3.7, DOOR.face + 0.14);
+    g.add(shaft);
+    for (const y of [0.9, 6.9]) {
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.26, 0.4), MAT.gold);
+      cap.position.set(side * 3.7, y, DOOR.face + 0.2);
+      g.add(cap);
+    }
+  }
+
+  // Door frame: carved stone jambs and lintel with a gold inner edge
+  for (const side of [-1, 1]) {
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.34, DOOR.h + 0.35, 0.3), sand);
+    jamb.position.set(side * (DOOR.halfW + 0.17), (DOOR.h + 0.35) / 2, DOOR.face + 0.05);
+    g.add(jamb);
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.05, DOOR.h, 0.32), MAT.gold);
+    trim.position.set(side * (DOOR.halfW + 0.02), DOOR.h / 2, DOOR.face + 0.05);
+    g.add(trim);
+  }
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(2 * DOOR.halfW + 0.7, 0.36, 0.34), sand);
+  lintel.position.set(0, DOOR.h + 0.18, DOOR.face + 0.07);
+  g.add(lintel);
+  const threshold = new THREE.Mesh(new THREE.BoxGeometry(2 * DOOR.halfW + 0.8, 0.14, 0.9), MAT.stone);
+  threshold.position.set(0, 0.07, DOOR.face + 0.2);
+  g.add(threshold);
+
+  // The arch over the lintel, ॐ at its heart
+  const archY = DOOR.h + 0.36;
+  const tymp = new THREE.Mesh(new THREE.CircleGeometry(1.86, 48, 0, Math.PI),
+    new THREE.MeshStandardMaterial({ map: omTexture(), roughness: 0.6, emissive: 0x3A1206, emissiveIntensity: 0.4 }));
+  tymp.position.set(0, archY, DOOR.face + 0.02);
+  g.add(tymp);
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.08, 10, 56, Math.PI), MAT.gold);
+  arch.position.set(0, archY, DOOR.face + 0.08);
+  g.add(arch);
+  const finial = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.42, 16), MAT.gold);
+  finial.position.set(0, archY + 2.12, DOOR.face + 0.08);
+  g.add(finial);
+
+  // ── The two leaves ──
+  const tex = doorTextures();
+  const doorMat = new THREE.MeshStandardMaterial({
+    map: tex.map, bumpMap: tex.bump, bumpScale: 2.2,
+    roughnessMap: tex.rm, metalnessMap: tex.rm, roughness: 1, metalness: 1,
+  });
+  const studGeo = new THREE.SphereGeometry(0.034, 12, 8);
+  studGeo.scale(1, 1, 0.6);
+  const leaves = [];
+  for (const side of [-1, 1]) {
+    const hinge = new THREE.Group();
+    hinge.position.set(side * DOOR.halfW, 0, DOOR.z);
+    const offset = side < 0 ? 0 : -2 * DOOR.halfW;        // local x of the leaf's world-left edge
+
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(DOOR.halfW, DOOR.h, DOOR.thick), doorMat);
+    leaf.position.set(offset + DOOR.halfW / 2, DOOR.h / 2, 0);
+    hinge.add(leaf);
+
+    const studs = new THREE.InstancedMesh(studGeo, MAT.gold, tex.studs.length);
+    const m4 = new THREE.Matrix4();
+    tex.studs.forEach(([u, v], i) => {
+      m4.makeTranslation(offset + u * DOOR.halfW, v * DOOR.h, DOOR.thick / 2 + 0.005);
+      studs.setMatrixAt(i, m4);
+    });
+    hinge.add(studs);
+
+    // Ring knocker near the meeting edge
+    const u = side < 0 ? 0.84 : 0.16;
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 20), MAT.gold);
+    plate.rotation.x = Math.PI / 2;
+    plate.position.set(offset + u * DOOR.halfW, 2.25, DOOR.thick / 2 + 0.01);
+    hinge.add(plate);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.018, 10, 28), MAT.gold);
+    ring.position.set(offset + u * DOOR.halfW, 2.12, DOOR.thick / 2 + 0.03);
+    hinge.add(ring);
+
+    hinge.userData.side = side;
+    g.add(hinge);
+    leaves.push(hinge);
+  }
+  g.userData.leaves = leaves;
+
+  // Two lamps burning at the threshold
+  g.userData.lamps = [];
+  for (const side of [-1, 1]) {
+    const lamp = makeLampStand(glowTex);
+    lamp.position.set(side * 2.75, 0, DOOR.face + 0.75);
+    lamp.userData.wicks.forEach((w) => { w.visible = true; });
+    g.add(lamp);
+    g.userData.lamps.push(lamp);
+  }
+  return g;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Marigold (genda) garlands and mango-leaf bandhanwar.
+// One InstancedMesh for every flower in the temple, one for the leaves.
+// ───────────────────────────────────────────────────────────────
+function sag(a, b, drop, step) {
+  const pts = [];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const n = Math.max(2, Math.ceil(len / step));
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    pts.push([
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t - drop * 4 * t * (1 - t),
+      a[2] + (b[2] - a[2]) * t,
+    ]);
+  }
+  return pts;
+}
+
+function marigoldGeometry(detail) {
+  // A frilly ball: the radius wobbles as a function of direction only, so
+  // shared vertices move together and the surface never cracks.
+  const geo = new THREE.IcosahedronGeometry(0.072, detail);
+  const p = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    const k = 1 + 0.2 * Math.sin(v.x * 23 + 1.3) * Math.sin(v.y * 19 + 0.7) * Math.sin(v.z * 29 + 2.1);
+    v.multiplyScalar(0.072 * k);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeGarlands(low) {
+  const strands = [];
+  const leaves = [];
+  const F = DOOR.face + 0.42;
+
+  // Entrance toran: two swags across the lintel, strands down the jambs,
+  // mango leaves hanging beneath.
+  const top = DOOR.h + 0.32;
+  for (const [a, b] of [[[-2.3, top, F], [0, top + 0.05, F]], [[0, top + 0.05, F], [2.3, top, F]]]) {
+    const s = sag(a, b, 0.32, 0.085);
+    strands.push(s);
+    for (let i = 2; i < s.length - 1; i += 4) leaves.push([s[i][0], s[i][1] - 0.06, s[i][2] + 0.02]);
+  }
+  for (const x of [-2.3, 2.3]) strands.push(sag([x, top, F], [x, top - 2.1, F], 0, 0.085));
+
+  // Inside: an M-shaped swag framing the top of the view (it passes beside
+  // her crown, never across her face), and a strand down each side.
+  const Z = 5.5;
+  strands.push(sag([-2.55, 4.55, Z], [0, 4.45, Z], 0.55, 0.085));
+  strands.push(sag([0, 4.45, Z], [2.55, 4.55, Z], 0.55, 0.085));
+  for (const x of [-2.55, 2.55]) strands.push(sag([x, 4.55, Z], [x, 1.9, Z], 0, 0.085));
+
+  const pts = strands.flat();
+  const flowers = new THREE.InstancedMesh(marigoldGeometry(low ? 1 : 2),
+    new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.78 }), pts.length);
+  const m4 = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const sc = new THREE.Vector3();
+  const pos = new THREE.Vector3();
+  const orange = new THREE.Color(0xFF7A12), yellow = new THREE.Color(0xFFB91A);
+  pts.forEach((p, i) => {
+    e.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
+    q.setFromEuler(e);
+    sc.setScalar(0.88 + Math.random() * 0.3);
+    m4.compose(pos.set(p[0], p[1], p[2]), q, sc);
+    flowers.setMatrixAt(i, m4);
+    // Real genda garlands alternate in runs of one colour.
+    flowers.setColorAt(i, Math.floor(i / 6) % 3 === 2 ? yellow : orange);
+  });
+
+  const leafGeo = new THREE.SphereGeometry(0.05, 8, 6);
+  leafGeo.scale(0.55, 2.8, 0.18);
+  leafGeo.translate(0, -0.13, 0);
+  const leafMesh = new THREE.InstancedMesh(leafGeo,
+    new THREE.MeshStandardMaterial({ color: 0x2F6B24, roughness: 0.55, side: THREE.DoubleSide }), leaves.length);
+  leaves.forEach((p, i) => {
+    e.set(0, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.25);
+    q.setFromEuler(e);
+    m4.compose(pos.set(p[0], p[1], p[2]), q, sc.setScalar(1));
+    leafMesh.setMatrixAt(i, m4);
+  });
+
+  const g = new THREE.Group();
+  g.add(flowers, leafMesh);
+  return g;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Brass bells that really swing: a pendulum on a chain.
+// ───────────────────────────────────────────────────────────────
+function makeBell(chainLen, scale = 1) {
+  const pivot = new THREE.Group();
+  const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, chainLen, 6), MAT.brassDark);
+  chain.position.y = -chainLen / 2;
+  pivot.add(chain);
+
+  const body = new THREE.Group();
+  body.position.y = -chainLen;
+  body.scale.setScalar(scale);
+  const prof = [[0, 0.02], [0.05, 0.02], [0.07, -0.02], [0.12, -0.08], [0.16, -0.22], [0.19, -0.36],
+    [0.25, -0.46], [0.28, -0.5], [0.25, -0.5], [0.18, -0.4], [0.13, -0.2], [0.09, -0.08], [0, -0.05]]
+    .map(([x, y]) => new THREE.Vector2(x, y));
+  const bellMat = MAT.gold.clone();
+  bellMat.side = THREE.DoubleSide;
+  const shell = new THREE.Mesh(new THREE.LatheGeometry(prof, 28), bellMat);
+  body.add(shell);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), MAT.gold);
+  knob.position.y = 0.04;
+  body.add(knob);
+  const clapper = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), MAT.brassDark);
+  clapper.position.y = -0.44;
+  body.add(clapper);
+  pivot.add(body);
+  pivot.userData = { amp: 0, t0: -99 };
+  return pivot;
+}
+
+// ───────────────────────────────────────────────────────────────
+// A ring of clay diyas on the plinth. Two are lit per parikrama, from
+// the centre outward, so the progress of the aarti is visible in the
+// temple itself.
+// ───────────────────────────────────────────────────────────────
+const DIYA_COUNT = 22;
+
+function makeDiyas() {
+  const g = new THREE.Group();
+  const prof = [[0, 0], [0.07, 0.005], [0.12, 0.03], [0.14, 0.06], [0.128, 0.066], [0.1, 0.042], [0, 0.036]]
+    .map(([x, y]) => new THREE.Vector2(x, y));
+  const bowls = new THREE.InstancedMesh(new THREE.LatheGeometry(prof, 16),
+    new THREE.MeshStandardMaterial({ color: 0x9A4A26, roughness: 0.86 }), DIYA_COUNT);
+
+  const pos = new Float32Array(DIYA_COUNT * 3);
+  const phase = new Float32Array(DIYA_COUNT);
+  const on = new Float32Array(DIYA_COUNT);
+  const m4 = new THREE.Matrix4();
+  const R = 3.28;
+  // Order of lighting: centre pair first, then outward.
+  const order = [];
+  for (let k = 0; k < DIYA_COUNT / 2; k++) order.push(DIYA_COUNT / 2 - 1 - k, DIYA_COUNT / 2 + k);
+  for (let i = 0; i < DIYA_COUNT; i++) {
+    const a = -1.25 + (i / (DIYA_COUNT - 1)) * 2.5;
+    const x = Math.sin(a) * R, z = Math.cos(a) * R;
+    m4.makeTranslation(x, IDOL.baseY, z);
+    bowls.setMatrixAt(i, m4);
+    pos.set([x, IDOL.baseY + 0.1, z], i * 3);
+    phase[i] = Math.random() * 6.28;
+  }
+  g.add(bowls);
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+  geo.setAttribute('aOn', new THREE.BufferAttribute(on, 1));
+  const flames = new THREE.Points(geo, pointsShader(`
+    uniform float uTime, uScale;
+    attribute float aPhase, aOn;
+    varying float vOn;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      float flick = 0.86 + 0.1 * sin(uTime * 9.0 + aPhase) + 0.05 * sin(uTime * 23.0 + aPhase * 3.0);
+      vOn = aOn * flick;
+      gl_PointSize = 0.24 * vOn * uScale / -mv.z;
+    }`, `
+    varying float vOn;
+    void main() {
+      if (vOn <= 0.01) discard;
+      vec2 p = gl_PointCoord * 2.0 - 1.0;
+      p.y = -p.y;
+      // Teardrop: narrows toward the tip
+      float w = 0.4 * (1.0 - 0.5 * clamp(p.y, -1.0, 1.0));
+      float core = 1.0 - smoothstep(0.0, 1.0, length(vec2(p.x / w, (p.y + 0.3) / 0.7)));
+      float halo = 1.0 - smoothstep(0.0, 1.0, length(p));
+      vec3 col = mix(vec3(1.0, 0.42, 0.08), vec3(1.0, 0.94, 0.75), core) * core * 2.4
+               + vec3(1.0, 0.55, 0.2) * halo * halo * 0.4;
+      gl_FragColor = vec4(col * vOn, 1.0);
+      //TAIL
+    }`));
+  flames.frustumCulled = false;
+  g.add(flames);
+
+  g.userData = { on, order, attr: geo.attributes.aOn };
+  return g;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Incense (dhoop) — sticks in a brass holder, smoke rising and curling.
+// Entirely GPU-driven: each particle's age is derived from time.
+// ───────────────────────────────────────────────────────────────
+function smokeTexture() {
+  return canvasTexture(64, 64, (ctx, w) => {
+    const g = ctx.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+    g.addColorStop(0, 'rgba(255,255,255,0.55)');
+    g.addColorStop(0.6, 'rgba(255,255,255,0.18)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, w);
+  });
+}
+
+function makeIncense(low) {
+  const g = new THREE.Group();
+  const stickMat = new THREE.MeshStandardMaterial({ color: 0x3A2014, roughness: 0.9 });
+  const tipMat = new THREE.MeshStandardMaterial({ color: 0xFF7A2A, emissive: 0xFF5A10, emissiveIntensity: 3 });
+  const origins = [];
+  for (const side of [-1, 1]) {
+    const base = new THREE.Group();
+    base.position.set(side * 1.95, IDOL.baseY, 2.45);
+    const holder = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.06, 16), MAT.brass);
+    holder.position.y = 0.03;
+    base.add(holder);
+    for (let k = 0; k < 3; k++) {
+      const tilt = (k - 1) * 0.16;
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.42, 5), stickMat);
+      stick.position.set(Math.sin(tilt) * 0.21, 0.24, 0);
+      stick.rotation.z = -tilt;
+      base.add(stick);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 4), tipMat);
+      const tx = Math.sin(tilt) * 0.42, ty = 0.03 + Math.cos(tilt) * 0.42;
+      tip.position.set(tx, ty, 0);
+      base.add(tip);
+      origins.push([side * 1.95 + tx, IDOL.baseY + ty + 0.01, 2.45]);
+    }
+    g.add(base);
+  }
+
+  const per = low ? 14 : 26;
+  const n = origins.length * per;
+  const pos = new Float32Array(n * 3), phase = new Float32Array(n), seed = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    pos.set(origins[i % origins.length], i * 3);
+    phase[i] = Math.random();
+    seed[i] = Math.random();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+  geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+  const smoke = new THREE.Points(geo, pointsShader(`
+    uniform float uTime, uScale;
+    attribute float aPhase, aSeed;
+    varying float vA;
+    void main() {
+      float age = fract(uTime * 0.085 + aPhase);
+      vec3 p = position;
+      p.y += age * 2.3;
+      p.x += sin(age * 5.0 + aSeed * 6.283) * 0.2 * age + age * 0.12;
+      p.z += cos(age * 4.0 + aSeed * 3.1) * 0.12 * age;
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = mix(0.06, 0.9, age) * uScale / -mv.z;
+      vA = smoothstep(0.0, 0.1, age) * (1.0 - age);
+    }`, `
+    uniform sampler2D uMap;
+    varying float vA;
+    void main() {
+      float a = texture2D(uMap, gl_PointCoord).a * vA;
+      gl_FragColor = vec4(vec3(0.62, 0.58, 0.55) * a * 0.3, 1.0);
+      //TAIL
+    }`, { uMap: { value: smokeTexture() } }));
+  smoke.frustumCulled = false;
+  g.add(smoke);
+  return g;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Shafts of light from above, with dust drifting in them.
+// ───────────────────────────────────────────────────────────────
+function makeLightShafts(glowTex, low) {
+  const g = new THREE.Group();
+  const rays = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  for (const [from, to, seed] of [
+    [[-2.3, 11, -1.6], [-0.9, 0.9, 1.3], 0.0],
+    [[0.5, 11.5, -1.1], [0.2, 0.8, 1.8], 2.1],
+    [[2.5, 11, -1.8], [1.1, 1.0, 1.2], 4.3],
+  ]) {
+    const a = new THREE.Vector3(...from), b = new THREE.Vector3(...to);
+    const dir = a.clone().sub(b);
+    const len = dir.length();
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { ...SHARED, uOpacity: { value: 0.05 }, uSeed: { value: seed }, uColor: { value: new THREE.Color(1.0, 0.82, 0.55) } },
+      vertexShader: `
+        varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main() {
+          vUv = uv;
+          vN = normalize(normalMatrix * normal);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform float uTime, uOpacity, uSeed; uniform vec3 uColor;
+        varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main() {
+          // Faces seen edge-on fade out: soft edges without any blur pass.
+          float f = pow(abs(dot(normalize(vN), normalize(vV))), 2.5);
+          float a = f * smoothstep(0.0, 0.55, vUv.y) * (0.8 + 0.2 * sin(uTime * 0.5 + vUv.y * 7.0 + uSeed));
+          gl_FragColor = vec4(uColor * a * uOpacity, 1.0);
+          ${SHADER_TAIL}
+        }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    });
+    const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 1.5, len, 24, 1, true), mat);
+    cone.position.copy(a).add(b).multiplyScalar(0.5);
+    cone.quaternion.setFromUnitVectors(up, dir.normalize());
+    g.add(cone);
+    rays.push(mat);
+  }
+
+  const n = low ? 90 : 180;
+  const pos = new Float32Array(n * 3), phase = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    pos.set([(Math.random() - 0.5) * 5.6, 0.8 + Math.random() * 7.2, -1 + Math.random() * 4.2], i * 3);
+    phase[i] = Math.random();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+  const dust = new THREE.Points(geo, pointsShader(`
+    uniform float uTime, uScale;
+    attribute float aPhase;
+    varying float vA;
+    void main() {
+      vec3 p = position;
+      float ph = aPhase * 6.283;
+      p += vec3(sin(uTime * 0.07 + ph) * 0.35, sin(uTime * 0.05 + ph * 1.7) * 0.45, cos(uTime * 0.06 + ph * 2.3) * 0.3);
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_Position = projectionMatrix * mv;
+      gl_PointSize = 0.03 * uScale / -mv.z;
+      vA = 0.35 + 0.35 * sin(uTime * 1.3 + aPhase * 40.0);
+    }`, `
+    uniform sampler2D uMap;
+    varying float vA;
+    void main() {
+      float a = texture2D(uMap, gl_PointCoord).a * vA;
+      gl_FragColor = vec4(vec3(1.0, 0.85, 0.6) * a * 0.7, 1.0);
+      //TAIL
+    }`, { uMap: { value: glowTex } }));
+  dust.frustumCulled = false;
+  g.add(dust);
+  g.userData.rays = rays;
+  return g;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Sparks lifting off the thali's flames as it moves.
+// ───────────────────────────────────────────────────────────────
+function makeEmbers(count) {
+  const pos = new Float32Array(count * 3);
+  const life = new Float32Array(count);
+  for (let i = 0; i < count; i++) pos[i * 3 + 1] = -100;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aLife', new THREE.BufferAttribute(life, 1));
+  const pts = new THREE.Points(geo, pointsShader(`
+    uniform float uScale;
+    attribute float aLife;
+    varying float vL;
+    void main() {
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_Position = projectionMatrix * mv;
+      vL = aLife;
+      gl_PointSize = 0.05 * (0.4 + aLife) * uScale / -mv.z;
+    }`, `
+    varying float vL;
+    void main() {
+      if (vL <= 0.0) discard;
+      float d = length(gl_PointCoord * 2.0 - 1.0);
+      float a = pow(max(0.0, 1.0 - d), 2.0) * vL;
+      gl_FragColor = vec4(vec3(1.0, 0.62, 0.22) * a * 1.8, 1.0);
+      //TAIL
+    }`));
+  pts.frustumCulled = false;
+  pts.userData = { vel: new Float32Array(count * 3), life, count, next: 0, acc: 0 };
+  return pts;
+}
+
 // ───────────────────────────────────────────────────────────────
 // Supplied-idol loading
 // ───────────────────────────────────────────────────────────────
@@ -1011,10 +1764,11 @@ export const Scene3D = {
     // The key light, pandal and pratima never move, so the shadow map is
     // rendered once (and again when the pratima arrives) instead of every
     // frame. With a million-triangle idol that halves the per-frame work.
+    // See shadowDirty in frame().
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = low ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     renderer.shadowMap.autoUpdate = false;
-    renderer.shadowMap.needsUpdate = true;
+    this.shadowDirty = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1026,8 +1780,8 @@ export const Scene3D = {
     this.scene = scene;
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
-    camera.position.set(0, 3.5, 11.6);           // POSES.start
-    camera.lookAt(0, 3.0, 0);
+    camera.position.set(0, 3.75, 21);            // POSES.start — outside the doors
+    camera.lookAt(0, 3.75, 0);
     this.camera = camera;
 
     // ── Textures ──
@@ -1128,11 +1882,6 @@ export const Scene3D = {
     this.offering = makeOffering(tex.petal);
     scene.add(this.offering);
 
-    // A brief bloom of light at the deity's feet when flowers are offered.
-    this.offeringLight = new THREE.PointLight(0xFFD7A0, 0, 14, 2);
-    this.offeringLight.position.set(0, 2.2, 2.0);
-    scene.add(this.offeringLight);
-
     this.lampLights = [];
     for (const side of [-1, 1]) {
       const l = new THREE.PointLight(0xFFA246, 0, 14, 2);
@@ -1141,9 +1890,95 @@ export const Scene3D = {
       this.lampLights.push(l);
     }
 
+    // ── Atmosphere ──
+    this.entrance = makeEntrance(glow);
+    scene.add(this.entrance);
+    this.door = { open: 0, from: 0, target: 0, t0: 0, dur: 1 };
+
+    scene.add(makeGarlands(low));
+
+    // Bells: two inside framing the top corners, one at the entrance.
+    this.bells = [];
+    for (const [x, y, z, chain, scale] of [
+      [-3.0, 7.0, 3.4, 2.3, 1.3], [3.0, 7.0, 3.4, 2.3, 1.3], [2.75, 6.0, DOOR.face + 0.55, 1.6, 1.15],
+    ]) {
+      const b = makeBell(chain, scale);
+      b.position.set(x, y, z);
+      scene.add(b);
+      this.bells.push(b);
+    }
+
+    this.diyas = makeDiyas();
+    scene.add(this.diyas);
+    scene.add(makeIncense(low));
+    this.shafts = makeLightShafts(glow, low);
+    scene.add(this.shafts);
+    this.embers = makeEmbers(low ? 40 : 90);
+    scene.add(this.embers);
+
+    // One warm light, two jobs: outside it lights the door; inside it is
+    // the uplight from the diya ring (and the bloom when flowers land).
+    // Every point light is paid for on every lit pixel, so it moves
+    // rather than being two lights.
+    this.warmLight = new THREE.PointLight(0xFFB060, 0, 12, 2);
+    scene.add(this.warmLight);
+
+    if (!low) this.setupBloom();
+
     this.ready = true;
     this.resize();
     return this;
+  },
+
+  // ── Bloom (high tier only) ──
+  // Flames, gold and the halo glow the way they do to the eye in a dark
+  // temple. Loaded lazily so low-end devices never download it, and
+  // dropped automatically by adapt() if the device can't keep up.
+  bloomOn: false,
+  async setupBloom() {
+    try {
+      const pp = 'three/addons/postprocessing/';
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+        import(pp + 'EffectComposer.js'), import(pp + 'RenderPass.js'),
+        import(pp + 'UnrealBloomPass.js'), import(pp + 'OutputPass.js'),
+      ]);
+      const w = window.innerWidth, h = window.innerHeight;
+      const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });
+      const composer = new EffectComposer(this.renderer, rt);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+      // Threshold above 1: only genuinely bright things (flames, lit gold
+      // highlights) bloom; the idol's painted surfaces stay crisp.
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.42, 1.0));
+      composer.addPass(new OutputPass());
+      this.composer = composer;
+      this.bloomOn = true;
+      this.resize();
+    } catch (err) {
+      console.warn('Bloom unavailable:', err);
+    }
+  },
+
+  render() {
+    if (this.bloomOn) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+  },
+
+  openDoors() { this.moveDoors(1, 2600); },
+  closeDoors() { this.moveDoors(0, 2200); },
+  moveDoors(target, dur) {
+    const d = this.door;
+    d.from = d.open;
+    d.target = target;
+    d.t0 = performance.now();
+    d.dur = dur;
+  },
+
+  ringBells(strength = 1) {
+    const now = performance.now() / 1000;
+    for (const b of this.bells) {
+      b.userData.t0 = now;
+      b.userData.amp = 0.3 * strength * (0.8 + Math.random() * 0.4);
+    }
   },
 
   // Tries the real model, then a cut-out photograph, and only falls back to
@@ -1157,7 +1992,7 @@ export const Scene3D = {
       this.prabhamandal.userData.ring.visible = false;
       this.prabhamandal.position.set(0, 3.6, -1.1);
       // Re-bake the shadow with the real pratima in place.
-      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowDirty = true;
       this.idolReadyAt = performance.now();
       console.info(`%c🔱 Pratima: using ${what}`, 'color:#E8C96A');
     };
@@ -1213,6 +2048,12 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     const h = window.innerHeight;
     this.renderer.setPixelRatio(this.perf.pr);
     this.renderer.setSize(w, h, false);
+    if (this.composer) {
+      this.composer.setPixelRatio(this.perf.pr);
+      this.composer.setSize(w, h);
+    }
+    // Point sprites are sized in pixels; this keeps them world-sized.
+    SHARED.uScale.value = (h * this.perf.pr) / 2;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   },
@@ -1239,6 +2080,12 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     p.n = 0;
     // Low tier is capped to ~30fps by the caller, so its budget is looser.
     const budget = this.tier === 'low' ? 42 : 24;
+    // Bloom is the first thing to go, before any resolution.
+    if (avg > budget && this.bloomOn) {
+      this.bloomOn = false;
+      console.info('Aarti: bloom off to hold the frame rate');
+      return;
+    }
     let next = p.pr;
     if (avg > budget) next = Math.max(p.minPR, p.pr - 0.15);
     else if (avg < budget * 0.5) next = Math.min(p.maxPR, p.pr + 0.1);
@@ -1248,24 +2095,33 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     }
   },
 
-  // Camera framing per phase: wide and still on the start screen, a slow
-  // push toward her when the aarti begins, closer again at the finale.
+  // Camera framing per phase: outside the temple doors on the start
+  // screen, a slow walk through the doorway when the aarti begins, closer
+  // again at the finale. Transitions are timed and eased, so the walk-in
+  // starts gently and settles gently instead of lurching.
   mode: 'start',
   POSES: {
-    start:  { y: 3.5, z: 11.6, look: 3.0 },
+    start:  { y: 3.75, z: 21, look: 3.75 },
     // Looks a little low so the scene sits high in frame: the thali's
     // lowest point must clear the subtitles along the bottom.
     aarti:  { y: 2.8, z: 9.4,  look: 2.3 },
     finale: { y: 2.9, z: 8.6,  look: 2.5 },
   },
-  pose: { y: 3.5, z: 11.6, look: 3.0 },
-  setMode(mode) { if (this.POSES[mode]) this.mode = mode; },
+  pose: { y: 3.75, z: 21, look: 3.75 },
+  trans: null,
+  setMode(mode) {
+    if (!this.POSES[mode] || mode === this.mode) return;
+    // Walking in through the doors is the long, ceremonial move.
+    const dur = this.mode === 'start' && mode === 'aarti' ? 4200 : 2600;
+    this.trans = { from: { ...this.pose }, t0: performance.now(), dur };
+    this.mode = mode;
+  },
 
   // Renders a fresh frame and returns the canvas. Without
   // preserveDrawingBuffer the pixels are only valid until the current task
   // ends, so the caller must draw/read it synchronously.
   snapshot() {
-    this.renderer.render(this.scene, this.camera);
+    this.render();
     return this.canvas;
   },
 
@@ -1353,6 +2209,41 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
       }
     }
 
+    // ── Sparks lifting off the thali ──
+    const E = this.embers.userData;
+    const epos = this.embers.geometry.attributes.position;
+    const dt = k / 60;
+    if (s.thaliVisible) {
+      const tp = this.thali.position;
+      E.acc += dt * 26;
+      while (E.acc >= 1) {
+        E.acc -= 1;
+        const i = E.next++ % E.count;
+        const a = Math.random() * 6.283;
+        epos.setXYZ(i, tp.x + Math.cos(a) * 0.35, tp.y + 0.22, tp.z + Math.sin(a) * 0.35);
+        E.vel[i * 3] = (Math.random() - 0.5) * 0.25;
+        E.vel[i * 3 + 1] = 0.45 + Math.random() * 0.5;
+        E.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.25;
+        E.life[i] = 1;
+      }
+    }
+    let sparks = false;
+    for (let i = 0; i < E.count; i++) {
+      if (E.life[i] <= 0) continue;
+      sparks = true;
+      E.life[i] -= dt / 1.5;
+      E.vel[i * 3] += Math.sin(sec * 3 + i) * 0.01;
+      epos.setXYZ(i,
+        epos.getX(i) + E.vel[i * 3] * dt,
+        epos.getY(i) + E.vel[i * 3 + 1] * dt,
+        epos.getZ(i) + E.vel[i * 3 + 2] * dt);
+      if (E.life[i] <= 0) { E.life[i] = 0; epos.setY(i, -100); }
+    }
+    if (sparks) {
+      epos.needsUpdate = true;
+      this.embers.geometry.attributes.aLife.needsUpdate = true;
+    }
+
     // ── Lamp wicks light one per parikrama ──
     const lit = s.finished ? TOTAL_WICKS : Math.min(TOTAL_WICKS, s.parikrama);
     for (let side = 0; side < 2; side++) {
@@ -1425,7 +2316,6 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     if (anyAlive) opos.needsUpdate = true;
 
     this.offeringPulse *= Math.pow(0.93, k);
-    this.offeringLight.intensity = this.offeringPulse * 50;
 
     // ── Camera: phase pose + head-tracked parallax + slow idle drift ──
     const v = this.viewer;
@@ -1434,14 +2324,16 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     v.y += (this.viewerTarget.y - v.y) * ease(0.055);
     v.near += (this.viewerTarget.near - v.near) * ease(0.045);
 
-    // A slow dolly between poses — about three seconds — reads as walking
-    // up to the pratima rather than a cut.
     const goal = this.POSES[this.mode];
     const pz = this.pose;
-    const e = ease(0.018);
-    pz.y += (goal.y - pz.y) * e;
-    pz.z += (goal.z - pz.z) * e;
-    pz.look += (goal.look - pz.look) * e;
+    if (this.trans) {
+      const p = Math.min(1, (performance.now() - this.trans.t0) / this.trans.dur);
+      const e = easeInOut(p), f = this.trans.from;
+      pz.y = f.y + (goal.y - f.y) * e;
+      pz.z = f.z + (goal.z - f.z) * e;
+      pz.look = f.look + (goal.look - f.look) * e;
+      if (p >= 1) this.trans = null;
+    }
 
     const driftX = Math.sin(sec * 0.13) * 0.14;
     const driftY = Math.sin(sec * 0.17) * 0.07;
@@ -1454,7 +2346,76 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     // near geometry slides against far geometry exactly as it would in life.
     this.camera.lookAt(0, pz.look, 0);
 
-    this.renderer.render(this.scene, this.camera);
+    SHARED.uTime.value = sec;
+
+    // ── Temple doors ──
+    const d = this.door;
+    if (d.open !== d.target) {
+      const p = Math.min(1, (performance.now() - d.t0) / d.dur);
+      d.open = p >= 1 ? d.target : d.from + (d.target - d.from) * easeInOut(p);
+    }
+    const ang = d.open * THREE.MathUtils.degToRad(96);
+    for (const leaf of this.entrance.userData.leaves) leaf.rotation.y = leaf.userData.side < 0 ? ang : -ang;
+
+    // Behind shut doors the million-triangle pratima is not drawn at all.
+    // The one exception is a pending shadow bake, which renders her once
+    // (hidden behind the doors) — that also uploads her textures and
+    // compiles her shaders while the loading veil is still up.
+    const inner = this.idol || this.durga;
+    inner.visible = !(d.open === 0 && d.target === 0) || this.shadowDirty;
+    if (this.shadowDirty) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowDirty = false;
+    }
+
+    // 0 while outside the doors, 1 once the camera has walked in.
+    const inside = 1 - THREE.MathUtils.smoothstep(pz.z, 11.5, 13.5);
+
+    // ── Entrance lamps flicker only while they can be seen ──
+    if (inside < 1) {
+      for (const lamp of this.entrance.userData.lamps) {
+        lamp.userData.wicks.forEach((w, i) => {
+          w.userData.flame.scale.set(1, 0.85 + Math.sin(sec * 8.5 + i * 2.3) * 0.15, 1);
+        });
+      }
+    }
+
+    // ── Bells swing as damped pendulums ──
+    for (const b of this.bells) {
+      const u = b.userData, bt = sec - u.t0;
+      if (bt < 8) {
+        const env = u.amp * Math.exp(-bt / 1.6);
+        b.rotation.z = env * Math.sin(bt * 4.6);
+        b.rotation.x = env * 0.3 * Math.sin(bt * 3.1 + 1);
+      } else if (b.rotation.z !== 0) {
+        b.rotation.set(0, 0, 0);
+      }
+    }
+
+    // ── Diya ring: two per parikrama, each fading up as it catches ──
+    const D = this.diyas.userData;
+    const litN = s.finished ? DIYA_COUNT : Math.min(DIYA_COUNT, s.parikrama * 2);
+    let changed = false, diyaGlow = 0;
+    for (let r = 0; r < DIYA_COUNT; r++) {
+      const i = D.order[r];
+      const want = r < litN ? 1 : 0;
+      if (D.on[i] !== want) {
+        D.on[i] = want > D.on[i] ? Math.min(1, D.on[i] + 0.03 * k) : Math.max(0, D.on[i] - 0.06 * k);
+        changed = true;
+      }
+      diyaGlow += D.on[i];
+    }
+    if (changed) D.attr.needsUpdate = true;
+
+    // ── The one warm light: door lamp outside, diya uplight inside ──
+    const wl = this.warmLight;
+    const inI = (diyaGlow / DIYA_COUNT) * 14 + this.offeringPulse * 50;
+    wl.position.set(0, 5.8 + (1.0 - 5.8) * inside, 15.5 + (3.0 - 15.5) * inside);
+    wl.intensity = 26 + (inI - 26) * inside;
+
+    for (const ray of this.shafts.userData.rays) ray.uniforms.uOpacity.value = 0.035 + glow * 0.05;
+
+    this.render();
   },
 
   pulseAmt: 0,
