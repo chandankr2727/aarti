@@ -329,6 +329,42 @@ function onHandsResults(results) {
   drawCameraPreview(results.image, plate);
 }
 
+// ── Pushpanjali ──
+// A finger counts as extended when its tip is further from the wrist than
+// its middle joint — robust to hand size, rotation and distance.
+function isOpenPalm(lm) {
+  const wrist = lm[0];
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  let extended = 0;
+  for (const [tip, pip] of [[8, 6], [12, 10], [16, 14], [20, 18]]) {
+    if (d(lm[tip], wrist) > d(lm[pip], wrist) * 1.18) extended++;
+  }
+  return extended >= 3;
+}
+
+function checkPushpanjali(hands, now) {
+  const open = !!(hands && hands.length >= 2 && hands.every(isOpenPalm));
+  // Fire on the rising edge only, so holding your palms up does not pour
+  // flowers continuously.
+  if (open && !gesture.palmsOpen && now - gesture.lastOfferAt > 900) {
+    gesture.lastOfferAt = now;
+    offerFlowers();
+  }
+  gesture.palmsOpen = open;
+}
+
+function offerFlowers() {
+  if (!STATE.started || STATE.finished) return;
+  STATE.offerings++;
+  Scene3D.pushpanjali();
+  playBell(0.45);
+  showHint('Flowers offered', '', 1800);
+
+  if (window.RathLogger) {
+    window.RathLogger.log('Aarti Detection', `Pushpanjali offered (${STATE.offerings}).`, 'info');
+  }
+}
+
 // Hand playing the aarti is lost for good (not just a dropped frame).
 function handGone(now) {
   return now - lastHandAt >= HAND_GRACE_MS;
