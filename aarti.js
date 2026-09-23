@@ -18,8 +18,8 @@ import Scene3D from './scene3d.js';
 const TOTAL_PARIKRAMA = 11;
 const AartiDetect = window.AartiDetect;
 
-// Low-end devices get a lighter renderer, a lighter hand model and no face
-// tracking. `?quality=low|high` overrides the guess.
+// Low-end devices get a lighter renderer and a 30fps cap.
+// `?quality=low|high` overrides the guess.
 // ponytail: heuristic from core count / memory; Scene3D.adapt() corrects
 // at runtime by measuring real frame times, so a wrong guess self-heals.
 const TIER = (() => {
@@ -162,8 +162,6 @@ function playDrum(strength = 1, at = 0) {
 // 4.  CAMERA + MEDIAPIPE
 // ═══════════════════════════════════════════════════════════════
 let mpHands = null;
-let mpFace = null;
-let frameNo = 0;
 
 function setCameraStatus(text, cls) {
   cameraStatus.textContent = text;
@@ -177,30 +175,17 @@ async function initCamera() {
     });
     mpHands.setOptions({
       maxNumHands: 2,
-      // The lite model is several times cheaper and still finds a palm
-      // reliably; weak devices need that headroom for the 3D scene.
-      modelComplexity: TIER === 'low' ? 0 : 1,
-      // A hand gripping a thali is a less "hand-like" shape, so a high
-      // confidence floor would drop it out of results entirely.
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+      // The lite model on every device: several times cheaper, and it
+      // still finds a palm holding a thali reliably.
+      modelComplexity: 0,
+      // Low floors on purpose: a hand gripping a thali is a less
+      // "hand-like" shape, and a hand near the edge of the frame is only
+      // partly visible. Higher values dropped both, so tracking felt
+      // confined to the middle of the picture.
+      minDetectionConfidence: 0.35,
+      minTrackingConfidence: 0.3,
     });
     mpHands.onResults(onHandsResults);
-
-    // Head-tracked parallax. Skipped on low-end devices: a second
-    // MediaPipe graph is more CPU than the effect is worth there.
-    if (TIER !== 'low') {
-      try {
-        mpFace = new FaceDetection({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`,
-        });
-        mpFace.setOptions({ model: 'short', minDetectionConfidence: 0.5 });
-        mpFace.onResults(onFaceResults);
-      } catch (err) {
-        console.warn('Face detection unavailable, parallax disabled:', err);
-        mpFace = null;
-      }
-    }
 
     const mpCamera = new Camera(webcamEl, {
       onFrame: async () => {
@@ -221,10 +206,12 @@ async function initCamera() {
         // Hands only matter once the aarti is under way; skipping them on
         // the start screen keeps the opening smooth.
         if (STATE.started && !STATE.finished) await mpHands.send({ image: webcamEl });
-        if (mpFace && (frameNo++ % 3 === 0)) await mpFace.send({ image: webcamEl });
       },
-      width: 320,
-      height: 240,
+      // 640×480 in: the landmark model crops the hand from the full-size
+      // frame, so a hand held further back is still sharp enough to find.
+      // Pixel analysis still runs on a 320×240 copy (motionCanvas).
+      width: 640,
+      height: 480,
     });
 
     mpCamera.start();
@@ -280,25 +267,6 @@ function onHandsResults(results) {
   checkPushpanjali(hands, performance.now());
   updateThali(plate, palm);
   drawCameraPreview(results.image, plate);
-}
-
-// ── Head-tracked parallax ──
-// The camera answers the devotee's head, so the pandal behaves like an
-// alcove seen through the screen instead of a picture of one.
-function onFaceResults(res) {
-  const det = res.detections && res.detections[0];
-  if (!det) {
-    Scene3D.setViewer(0, 0, 0);
-    return;
-  }
-  const bb = det.boundingBox;
-  // The webcam image is not mirrored, so moving right lowers xCenter. The
-  // camera must travel the same way the head does, hence (0.5 - centre).
-  const hx = (0.5 - bb.xCenter) * 2.2;
-  const hy = (0.5 - bb.yCenter) * 1.8;
-  // Apparent face width stands in for distance: leaning in moves you in.
-  const near = (bb.width - 0.15) / 0.16;
-  Scene3D.setViewer(hx, hy, near);
 }
 
 // ── Pushpanjali ──

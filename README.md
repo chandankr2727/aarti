@@ -21,8 +21,7 @@ since that's the actual prayer being recited, not UI text.
    4-second walk) while the sankalp line is spoken on screen.
 4. **Aarti** — inside: brass bells that really swing on every parikrama,
    marigold garlands framing the view, a ring of 22 clay diyas that light two
-   per parikrama, incense smoke curling up, soft light shafts with drifting
-   dust, and sparks lifting off the thali. On-screen chrome stays at the
+   per parikrama, and sparks lifting off the thali. On-screen chrome stays at the
    edges: a brass parikrama ring with eleven flames, the verse as subtitles,
    a brass-rimmed camera mirror, and guidance only when needed.
    Extras: bell button / `Space` rings the bells; flower button (or two open
@@ -39,8 +38,17 @@ parikrama, nothing continuous.
 
 ## Performance (low-end devices)
 
-The model is never reduced — all 1.22M triangles ship to every device. The
-cost is controlled around it:
+**The pratima is now a photograph** (`assets/maDurga.png`, cropped to the
+figure in UV space and stood up as a softly self-lit plane). The 1.22M-triangle
+`durga.glb` lagged on every device; it is commented out in the `IDOL` block
+atop `scene3d.js`, not deleted — set `model: 'assets/durga.glb'` to bring it
+back. Face-tracked parallax is gone too: it would reveal the photo is flat.
+
+The heavier atmosphere is switched off in the `FX` block atop `scene3d.js`
+(shadows, bloom, light shafts with dust, incense smoke) — each can be turned
+back on and judged on its own. Every device uses MediaPipe's lite hand model.
+
+Other measures:
 
 | Change | Why |
 | --- | --- |
@@ -53,8 +61,9 @@ cost is controlled around it:
 | Pratima not drawn behind shut doors | On the start screen the doors hide her, so she is skipped entirely. Her shadow bake, texture upload and shader compile happen in one hidden frame while the loading veil is still up. |
 | Atmosphere is GPU-driven | Smoke, dust and diya flicker animate in shaders from one time uniform — no per-frame JavaScript. Each effect is one draw call; all flowers are one instanced mesh. |
 | One warm light, two jobs | The door lamp outside and the diya uplight inside are the same light, moved — every point light costs per pixel. |
-| Bloom (high tier only) | Flames and gold glow via UnrealBloomPass, loaded lazily; it is the first thing `adapt()` switches off if frames slow down. |
-| Low tier (≤4 cores / ≤4 GB, or `?quality=low`) | No bloom, no MSAA, pixel ratio ≤1, ~30fps cap, lite hand model, no face tracking, one fewer light, fewer petals/smoke/dust, simpler marigolds. `?quality=high` forces the full path. |
+| Bloom (`FX.bloom`, off) | When on: high tier only, loaded lazily, and the first thing `adapt()` switches off if frames slow down. |
+| Pixel ratio ≤1.5 | Even on high-DPI screens; 2× cost almost double the pixels for little visible gain. |
+| Low tier (≤4 cores / ≤4 GB, or `?quality=low`) | No MSAA, pixel ratio ≤1, ~30fps cap, fewer petals and sparks. `?quality=high` forces the full path. |
 
 Animation is time-based, so capped or struggling devices move at the same
 speed.

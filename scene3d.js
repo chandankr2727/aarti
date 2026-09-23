@@ -18,6 +18,18 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 // ═══════════════════════════════════════════════════════════════
+// EFFECTS — switches for the heavier atmosphere. Off: together they made
+// the scene lag on every device. The code is kept so any one can be
+// turned back on and judged on its own.
+// ═══════════════════════════════════════════════════════════════
+const FX = {
+  shadows: false,     // real-time shadow map (and PCF filtering on every lit pixel)
+  bloom: false,       // post-process glow; a full-screen multi-pass blur
+  lightShafts: false, // additive cones over the idol + drifting dust
+  incenseSmoke: false,
+};
+
+// ═══════════════════════════════════════════════════════════════
 // THE IDOL
 //
 // Order of preference, best first:
@@ -32,8 +44,14 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 // See README "Supplying the idol" for the file specs.
 // ═══════════════════════════════════════════════════════════════
 const IDOL = {
-  model: 'assets/durga.glb',
-  photo: 'assets/durga.png',
+  // 3D MODEL — DISABLED. At 1.2M triangles it lagged on every device.
+  // Un-comment to bring it back (the photo is then only a fallback).
+  // model: 'assets/durga.glb',
+  model: null,
+  photo: 'assets/maDurga.png',
+  // The photo's figure sits in the middle of a wide transparent canvas;
+  // this crops to it in UV space so the plane is no wider than she is.
+  photoCrop: { x0: 384 / 1470, x1: 1074 / 1470 },
   targetHeight: 5.0,      // world units, base of idol to top
   baseY: 0.62,            // top of the plinth
   // Nudges for models that were not authored Y-up facing +Z.
@@ -1306,7 +1324,7 @@ function marigoldGeometry(detail) {
   return geo;
 }
 
-function makeGarlands(low) {
+function makeGarlands() {
   const strands = [];
   const leaves = [];
   const F = DOOR.face + 0.42;
@@ -1329,7 +1347,7 @@ function makeGarlands(low) {
   for (const x of [-2.55, 2.55]) strands.push(sag([x, 4.55, Z], [x, 1.9, Z], 0, 0.085));
 
   const pts = strands.flat();
-  const flowers = new THREE.InstancedMesh(marigoldGeometry(low ? 1 : 2),
+  const flowers = new THREE.InstancedMesh(marigoldGeometry(1),
     new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.78 }), pts.length);
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
@@ -1722,14 +1740,22 @@ function loadIdolPhoto(url) {
   return new Promise((resolve, reject) => {
     new THREE.TextureLoader().load(url, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
       const img = tex.image;
-      const aspect = (img && img.width && img.height) ? img.width / img.height : 0.6;
+      const c = IDOL.photoCrop || { x0: 0, x1: 1 };
+      tex.repeat.x = c.x1 - c.x0;
+      tex.offset.x = c.x0;
+      const aspect = (img && img.width && img.height) ? (img.width * tex.repeat.x) / img.height : 0.6;
       const h = IDOL.targetHeight;
+      // A photograph already carries its own lighting, so it glows from
+      // within (emissive) and the lamps and thali only warm it further —
+      // lit purely by the scene it looked muddy.
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(h * aspect, h),
         new THREE.MeshStandardMaterial({
-          map: tex, transparent: true, alphaTest: 0.5,
-          roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide,
+          map: tex, emissiveMap: tex, emissive: 0xFFFFFF, emissiveIntensity: 0.55,
+          transparent: true, alphaTest: 0.08,
+          roughness: 0.85, metalness: 0.0,
         }),
       );
       plane.position.set(IDOL.offset.x, IDOL.baseY + h / 2 + IDOL.offset.y, IDOL.offset.z);
@@ -1758,7 +1784,7 @@ export const Scene3D = {
       canvas, antialias: !low, alpha: false, powerPreference: 'high-performance',
     });
     const dpr = window.devicePixelRatio || 1;
-    this.perf.maxPR = low ? Math.min(dpr, 1) : Math.min(dpr, 2);
+    this.perf.maxPR = low ? Math.min(dpr, 1) : Math.min(dpr, 1.5);
     this.perf.minPR = low ? 0.6 : Math.min(0.75, this.perf.maxPR);
     this.perf.pr = this.perf.maxPR;
     renderer.setPixelRatio(this.perf.pr);
@@ -1767,7 +1793,7 @@ export const Scene3D = {
     // rendered once (and again when the pratima arrives) instead of every
     // frame. With a million-triangle idol that halves the per-frame work.
     // See shadowDirty in frame().
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = FX.shadows;
     renderer.shadowMap.type = low ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     renderer.shadowMap.autoUpdate = false;
     this.shadowDirty = true;
@@ -1822,13 +1848,8 @@ export const Scene3D = {
     scene.add(rim);
     this.rim = rim;
 
-    // Cool fill is the subtlest light; every point light is paid for per
-    // pixel, so weak GPUs go without it.
-    if (!low) {
-      const fill = new THREE.PointLight(0x6E86FF, 12, 26, 2);
-      fill.position.set(-6, 3.2, 6.5);
-      scene.add(fill);
-    }
+    // (A cool fill light used to sit here. Every point light is paid for
+    // on every lit pixel, so the scene keeps only the ones that matter.)
 
     // ── Contents ──
     this.pandal = makePandal(tex);
@@ -1843,15 +1864,6 @@ export const Scene3D = {
     this.durga.position.y = IDOL.baseY;
     scene.add(this.durga);
 
-    // Loaded after the pratima exists — a cached or synchronous load would
-    // otherwise fire the callback before there is a face to apply it to.
-    new THREE.TextureLoader().load('assets/tex-durga-face.png', (t) => {
-      t.colorSpace = THREE.SRGBColorSpace;
-      const face = this.durga.userData.face;
-      face.material.map = t;
-      face.material.needsUpdate = true;
-      face.visible = true;
-    });
 
     this.prabhamandal = makePrabhamandal(glow);
     scene.add(this.prabhamandal);
@@ -1884,20 +1896,13 @@ export const Scene3D = {
     this.offering = makeOffering(tex.petal);
     scene.add(this.offering);
 
-    this.lampLights = [];
-    for (const side of [-1, 1]) {
-      const l = new THREE.PointLight(0xFFA246, 0, 14, 2);
-      l.position.set(side * 3.05, 2.2, 2.1);
-      scene.add(l);
-      this.lampLights.push(l);
-    }
 
     // ── Atmosphere ──
     this.entrance = makeEntrance(glow);
     scene.add(this.entrance);
     this.door = { open: 0, from: 0, target: 0, t0: 0, dur: 1 };
 
-    scene.add(makeGarlands(low));
+    scene.add(makeGarlands());
 
     // Bells: two inside framing the top corners, one at the entrance.
     this.bells = [];
@@ -1912,10 +1917,12 @@ export const Scene3D = {
 
     this.diyas = makeDiyas();
     scene.add(this.diyas);
-    scene.add(makeIncense(low));
-    this.shafts = makeLightShafts(glow, low);
-    scene.add(this.shafts);
-    this.embers = makeEmbers(low ? 40 : 90);
+    if (FX.incenseSmoke) scene.add(makeIncense(low));
+    if (FX.lightShafts) {
+      this.shafts = makeLightShafts(glow, low);
+      scene.add(this.shafts);
+    }
+    this.embers = makeEmbers(low ? 24 : 40);
     scene.add(this.embers);
 
     // One warm light, two jobs: outside it lights the door; inside it is
@@ -1925,7 +1932,7 @@ export const Scene3D = {
     this.warmLight = new THREE.PointLight(0xFFB060, 0, 12, 2);
     scene.add(this.warmLight);
 
-    if (!low) this.setupBloom();
+    if (FX.bloom && !low) this.setupBloom();
 
     this.ready = true;
     this.resize();
@@ -2009,7 +2016,7 @@ export const Scene3D = {
       }
     };
 
-    if (await exists(IDOL.model)) {
+    if (IDOL.model && await exists(IDOL.model)) {
       try {
         this.idol = fitToPlinth(await loadIdolModel(IDOL.model, this.onIdolProgress));
         this.scene.add(this.idol);
@@ -2127,18 +2134,6 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     return this.canvas;
   },
 
-  // ── Head-tracked parallax ──
-  // Where the devotee's head is, as -1..1 across and up the frame plus a
-  // 0..1 nearness. The camera answers, so the pandal behaves like an alcove
-  // seen through the screen rather than a picture of one.
-  viewer: { x: 0, y: 0, near: 0 },
-  viewerTarget: { x: 0, y: 0, near: 0 },
-  setViewer(x, y, near) {
-    this.viewerTarget.x = Math.max(-1, Math.min(1, x));
-    this.viewerTarget.y = Math.max(-1, Math.min(1, y));
-    this.viewerTarget.near = Math.max(0, Math.min(1, near));
-  },
-
   /**
    * Throw flowers at the deity's feet.
    * @param {number} spread lateral spread of the burst, in world units
@@ -2250,18 +2245,15 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     const lit = s.finished ? TOTAL_WICKS : Math.min(TOTAL_WICKS, s.parikrama);
     for (let side = 0; side < 2; side++) {
       const wicks = this.lamps[side].userData.wicks;
-      let sideLit = 0;
       for (let i = 0; i < wicks.length; i++) {
         const index = side === 0 ? i : i + 5;
         const on = index < lit;
         wicks[i].visible = on;
         if (on) {
-          sideLit++;
           const f = 0.85 + Math.sin(sec * 8 + i * 2.1 + side) * 0.15;
           wicks[i].userData.flame.scale.set(1, f, 1);
         }
       }
-      this.lampLights[side].intensity = sideLit * 5;
     }
     const floorLit = s.finished || s.parikrama >= TOTAL_WICKS;
     for (const w of this.floorLamp.userData.wicks) w.visible = floorLit;
@@ -2319,13 +2311,7 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
 
     this.offeringPulse *= Math.pow(0.93, k);
 
-    // ── Camera: phase pose + head-tracked parallax + slow idle drift ──
-    const v = this.viewer;
-    const ease = (r) => 1 - Math.pow(1 - r, k);
-    v.x += (this.viewerTarget.x - v.x) * ease(0.055);
-    v.y += (this.viewerTarget.y - v.y) * ease(0.055);
-    v.near += (this.viewerTarget.near - v.near) * ease(0.045);
-
+    // ── Camera: holds still, and moves only to walk between poses ──
     const goal = this.POSES[this.mode];
     const pz = this.pose;
     if (this.trans) {
@@ -2337,15 +2323,7 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
       if (p >= 1) this.trans = null;
     }
 
-    const driftX = Math.sin(sec * 0.13) * 0.14;
-    const driftY = Math.sin(sec * 0.17) * 0.07;
-    this.camera.position.set(
-      v.x * 2.3 + driftX,
-      pz.y + v.y * 1.15 + driftY,
-      pz.z - v.near * 2.6,
-    );
-    // Looking at a fixed point while the eye moves is what sells the depth:
-    // near geometry slides against far geometry exactly as it would in life.
+    this.camera.position.set(0, pz.y, pz.z);
     this.camera.lookAt(0, pz.look, 0);
 
     SHARED.uTime.value = sec;
@@ -2415,7 +2393,7 @@ idol. Drop a model or a cut-out photo into aarti/assets/ (see README).`,
     wl.position.set(0, 5.8 + (1.0 - 5.8) * inside, 15.5 + (3.0 - 15.5) * inside);
     wl.intensity = 26 + (inI - 26) * inside;
 
-    for (const ray of this.shafts.userData.rays) ray.uniforms.uOpacity.value = 0.035 + glow * 0.05;
+    if (this.shafts) for (const ray of this.shafts.userData.rays) ray.uniforms.uOpacity.value = 0.035 + glow * 0.05;
 
     this.render();
   },

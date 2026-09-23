@@ -338,19 +338,20 @@ body.playing #hint.show { opacity: 1; }
 .icon-btn:active { transform: scale(0.92); }
 body.finished #bellBtn, body.finished #flowerBtn { display: none; }
 
-/* Camera mirror, bottom-right: a small glass in a brass rim */
+/* Camera mirror, bottom-right: the WHOLE camera frame in a brass rim.
+   It used to be a circle that cropped the sides, which made it look as if
+   only hands inside the circle were tracked; the full 4:3 frame is. */
 #cameraWidget {
   position: absolute; right: 24px; bottom: 24px; z-index: 16;
-  width: 112px; height: 112px; padding: 4px;
-  border-radius: 50%;
+  width: 168px; height: 126px; padding: 4px;
+  border-radius: 14px;
   background: conic-gradient(from 210deg, #6E5010, #F2D98A, #B08426, #F8E6A8, #8A6A18, #6E5010);
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.7);
 }
 body.playing #cameraWidget:not(.stowed) { opacity: 0.95; }
 #cameraPreviewCanvas {
   display: block; width: 100%; height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
+  border-radius: 10px;
   border: 2px solid #2A1406;
 }
 #cameraWidgetDot {
@@ -480,7 +481,7 @@ body.darshan #vignette { opacity: 0.4; }
 @media (max-width: 820px) {
   #lyrics { width: 88vw; bottom: 150px; }
   #counter { left: 14px; bottom: 14px; transform: scale(0.85); transform-origin: 0 100%; }
-  #cameraWidget { right: 14px; bottom: 14px; width: 92px; height: 92px; }
+  #cameraWidget { right: 14px; bottom: 14px; width: 128px; height: 96px; }
   .steps { font-size: 15px; }
 }
 
