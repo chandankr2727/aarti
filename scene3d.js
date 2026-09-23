@@ -182,54 +182,55 @@ function sareeTexture() {
   }, [4, 1]);
 }
 
-// The painted arc (prabhavali) that stands behind the pratima.
+// The cloth hung behind the pratima: deep maroon velvet with gold brocade
+// bootis and soft vertical folds, falling off into shadow at the top.
+// (It used to be painted sun-rays, which read as a cartoon behind a photo.)
 function chalchitraTexture() {
-  return canvasTexture(1024, 512, (ctx, w, h) => {
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#7C1520');
-    g.addColorStop(0.55, '#A62231');
-    g.addColorStop(1, '#5E0F18');
-    ctx.fillStyle = g;
+  const tex = canvasTexture(1024, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#34080E';
     ctx.fillRect(0, 0, w, h);
 
-    // Radiating gold rays from the centre bottom
-    ctx.save();
-    ctx.translate(w / 2, h);
-    for (let i = 0; i < 48; i++) {
-      ctx.rotate((Math.PI * 2) / 48);
-      ctx.fillStyle = i % 2 ? 'rgba(226,186,86,0.30)' : 'rgba(255,225,150,0.14)';
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(18, -h * 1.4);
-      ctx.lineTo(-18, -h * 1.4);
-      ctx.fill();
+    // Folds: slow light/dark bands, the way velvet catches lamplight
+    for (let x = 0; x < w; x += 2) {
+      const u = x / w;
+      const f = 0.5 + 0.35 * Math.sin(u * Math.PI * 14) + 0.15 * Math.sin(u * Math.PI * 37 + 1.3);
+      ctx.fillStyle = `rgba(${(70 + f * 55) | 0},${(10 + f * 10) | 0},${(18 + f * 10) | 0},0.6)`;
+      ctx.fillRect(x, 0, 2, h);
     }
-    ctx.restore();
 
-    // Scalloped gold trim along the top
-    ctx.strokeStyle = '#E8C96A';
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    for (let x = 0; x <= w; x += 64) ctx.arc(x + 32, 26, 32, Math.PI, Math.PI * 2);
-    ctx.stroke();
-
-    // Floral medallions
-    for (let i = 0; i < 9; i++) {
-      const x = (i + 0.5) * (w / 9);
-      const y = h * 0.42 + Math.sin(i * 1.1) * 28;
-      ctx.fillStyle = 'rgba(232,201,106,0.55)';
-      for (let p = 0; p < 8; p++) {
-        const a = (p / 8) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.ellipse(x + Math.cos(a) * 20, y + Math.sin(a) * 20, 11, 6, a, 0, Math.PI * 2);
-        ctx.fill();
+    // Brocade: small gold flowers in a staggered grid
+    ctx.fillStyle = 'rgba(214,168,78,0.34)';
+    for (let y = 44, row = 0; y < h - 20; y += 52, row++) {
+      for (let x = 20 + (row % 2) * 26; x < w; x += 52) {
+        for (let p = 0; p < 4; p++) {
+          const a = (p * Math.PI) / 2;
+          ctx.beginPath();
+          ctx.ellipse(x + Math.cos(a) * 4.5, y + Math.sin(a) * 4.5, 4, 2, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
-      ctx.fillStyle = '#F4E3A8';
-      ctx.beginPath();
-      ctx.arc(x, y, 9, 0, Math.PI * 2);
-      ctx.fill();
     }
+
+    // Zari borders top and bottom
+    const band = (y0, bh) => {
+      const g = ctx.createLinearGradient(0, y0, 0, y0 + bh);
+      g.addColorStop(0, '#5E430C'); g.addColorStop(0.5, '#D9B560'); g.addColorStop(1, '#5E430C');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, y0, w, bh);
+    };
+    band(0, 16);
+    band(h - 12, 12);
+
+    // Lamplight falls off with height
+    const v = ctx.createLinearGradient(0, 0, 0, h);
+    v.addColorStop(0, 'rgba(0,0,0,0.6)');
+    v.addColorStop(0.55, 'rgba(0,0,0,0.08)');
+    v.addColorStop(1, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, w, h);
   });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 // Metals reflect their surroundings; with only point lights and no
@@ -847,19 +848,8 @@ function makePandal(tex) {
       b.rotation.x = Math.PI / 2;
       g.add(b);
     }
-    // Pandal cloth hanging full-height beside each pillar. Rippled and
-    // vertical, so it reads as fabric rather than a flat card in the air.
-    const curtain = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 9.4, 14, 4), MAT.drape);
-    curtain.position.set(side * 5.5, 4.8, -1.4);
-    curtain.rotation.set(0, side * -0.42, 0);
-    const pos = curtain.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const u = pos.getX(i) / 2.8 + 0.5;
-      pos.setZ(i, Math.sin(u * Math.PI * 4) * 0.28);
-    }
-    pos.needsUpdate = true;
-    curtain.geometry.computeVertexNormals();
-    g.add(curtain);
+    // (Flat red curtain panels used to hang here; they read as cardboard
+    // next to a real photograph, so the pillars now fall into shadow.)
   }
 
   // Valance across the top of the pandal
@@ -1759,8 +1749,27 @@ function loadIdolPhoto(url) {
         }),
       );
       plane.position.set(IDOL.offset.x, IDOL.baseY + h / 2 + IDOL.offset.y, IDOL.offset.z);
-      plane.castShadow = true;
-      resolve(plane);
+
+      // Contact shadow on the plinth. Without it a photograph floats in
+      // front of the stone; with it she is sitting on it.
+      const shadowTex = canvasTexture(128, 128, (ctx, w) => {
+        const g = ctx.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+        g.addColorStop(0, 'rgba(0,0,0,0.85)');
+        g.addColorStop(0.55, 'rgba(0,0,0,0.45)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, w);
+      });
+      const shadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(h * aspect * 0.85, 1.4),
+        new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }),
+      );
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.position.set(IDOL.offset.x, IDOL.baseY + 0.012, IDOL.offset.z + 0.15);
+
+      const group = new THREE.Group();
+      group.add(shadow, plane);
+      resolve(group);
     }, undefined, reject);
   });
 }

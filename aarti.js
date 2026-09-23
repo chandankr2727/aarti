@@ -163,6 +163,15 @@ function playDrum(strength = 1, at = 0) {
 // ═══════════════════════════════════════════════════════════════
 let mpHands = null;
 
+// Hand tracking runs on the main thread, so every inference is a frame the
+// scene cannot draw. It is capped well below the display rate — the circle
+// tracker only needs ~15 samples a second (a fast aarti still moves under
+// 30° between samples; it rejects jumps over 68°).
+// ponytail: fixed caps per tier; make adaptive if mid-range devices still stutter
+const HANDS_INTERVAL_MS = TIER === 'low' ? 80 : 50;
+let lastHandsAt = 0;
+let handsWarm = false;
+
 function setCameraStatus(text, cls) {
   cameraStatus.textContent = text;
   cameraStatus.className = cls || '';
@@ -186,6 +195,9 @@ async function initCamera() {
       minTrackingConfidence: 0.3,
     });
     mpHands.onResults(onHandsResults);
+    // Fetch the WASM and model now, during the loading veil, not on the
+    // first frame of the aarti.
+    mpHands.initialize?.().catch((err) => console.warn('Hands preload failed:', err));
 
     const mpCamera = new Camera(webcamEl, {
       onFrame: async () => {
@@ -199,19 +211,33 @@ async function initCamera() {
             window.RathLogger.log('Aarti Detection', `Webcam active, MediaPipe Hands loaded (tier: ${TIER}).`, 'info');
             const recordingEnabled = localStorage.getItem('aarti_video_recording_enabled') !== 'false';
             if (recordingEnabled && previewCanvas) {
-              window.RathLogger.startRecording(previewCanvas.captureStream(20));
+              // 12fps is plenty for a session log and halves the encoder's CPU cost.
+              window.RathLogger.startRecording(previewCanvas.captureStream(12));
             }
           }
         }
-        // Hands only matter once the aarti is under way; skipping them on
-        // the start screen keeps the opening smooth.
-        if (STATE.started && !STATE.finished) await mpHands.send({ image: webcamEl });
+        // One warm-up inference as soon as the camera is live: the first
+        // send builds the whole graph, which froze weaker devices for a
+        // moment right as the aarti began. Now it happens on the start
+        // screen, where nothing is moving.
+        if (!handsWarm) {
+          handsWarm = true;
+          await mpHands.send({ image: webcamEl });
+          return;
+        }
+        // After that, hands only run during the aarti, at a capped rate.
+        const now = performance.now();
+        if (STATE.started && !STATE.finished && now - lastHandsAt >= HANDS_INTERVAL_MS) {
+          lastHandsAt = now;
+          await mpHands.send({ image: webcamEl });
+        }
       },
-      // 640×480 in: the landmark model crops the hand from the full-size
-      // frame, so a hand held further back is still sharp enough to find.
-      // Pixel analysis still runs on a 320×240 copy (motionCanvas).
-      width: 640,
-      height: 480,
+      // Higher resolution in: the landmark model crops the hand from the
+      // full-size frame, so a hand held further back is still sharp enough
+      // to find. Weaker devices take a smaller frame to upload each time.
+      // Pixel analysis always runs on a 320×240 copy (motionCanvas).
+      width: TIER === 'low' ? 480 : 640,
+      height: TIER === 'low' ? 360 : 480,
     });
 
     mpCamera.start();
