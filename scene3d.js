@@ -1227,7 +1227,9 @@ function makeEntrance(glowTex) {
   for (const side of [-1, 1]) {
     const hinge = new THREE.Group();
     hinge.position.set(side * DOOR.halfW, 0, DOOR.z);
-    const offset = side < 0 ? 0 : -2 * DOOR.halfW;        // local x of the leaf's world-left edge
+    // Local x of the leaf's world-left edge. Each leaf is DOOR.halfW wide:
+    // the left leaf runs 0..+W from its hinge, the right leaf -W..0.
+    const offset = side < 0 ? 0 : -DOOR.halfW;
 
     const leaf = new THREE.Mesh(new THREE.BoxGeometry(DOOR.halfW, DOOR.h, DOOR.thick), doorMat);
     leaf.position.set(offset + DOOR.halfW / 2, DOOR.h / 2, 0);
